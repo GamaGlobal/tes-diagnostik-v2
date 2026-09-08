@@ -1,3 +1,5 @@
+import './globals.css';
+
 export const metadata = { title: 'Simulasi Tes IST' };
 
 export default function RootLayout({ children }) {

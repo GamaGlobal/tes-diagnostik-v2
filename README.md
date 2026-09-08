@@ -19,10 +19,15 @@ npm run dev
 ## Struktur
 
 ```
+app/page.js                 -> landing (link ke /tes dan /admin)
+app/tes/page.js             -> UI siswa: login, per-bagian, timer, anti-cheat, hasil
+app/admin/page.js           -> panel panitia: live monitor + paksa selesaikan
+app/globals.css             -> desain shared (dipakai app/tes & app/admin), gaya sama seperti SimTKA-v2
 app/api/attempt/start/      -> mulai/resume sesi tes (login + cek sesi lama)
 app/api/attempt/answer/     -> AUTOSAVE per jawaban (inti perbaikan dari sistem lama)
 app/api/attempt/heartbeat/  -> update progres (utk Live Monitor)
 app/api/attempt/finish/     -> hitung & simpan hasil (dipakai siswa & panitia)
+app/api/admin/monitor/      -> data untuk panel /admin (gate: header x-panitia-pin)
 lib/db.js                   -> koneksi Neon
 lib/labels.js               -> label/deskripsi RIASEC, GAYA, BAKAT (dari index.html)
 lib/scoring.js              -> port computeResults() — hitung IQ, RIASEC, gaya belajar, bakat
@@ -31,6 +36,20 @@ db/002_bank_soal.sql        -> 446 soal hasil extract dari index.html
 db/003_siswa_belum_selesai.sql -> 22 akun siswa yang datanya belum ada/tidak lengkap
 scripts/migrate.js          -> jalankan semua db/*.sql berurutan
 ```
+
+## Panel Panitia (`/admin`)
+
+Masuk pakai `PANITIA_PIN` (env var yang sama dipakai untuk tombol "Paksa
+Selesaikan"). Menampilkan dua tab:
+- **Sedang Mengerjakan** — nama, progres bagian, jumlah soal terjawab,
+  pelanggaran (pindah tab), dan status Aktif/Idle/Kemungkinan ditinggal
+  (dihitung dari `heartbeat_at`, auto-refresh tiap 15 detik).
+- **Sudah Selesai** — rekap hasil (level IQ, skor IST, kode RIASEC, gaya
+  belajar dominan, bakat terkuat).
+
+Tombol **Paksa Selesaikan** memanggil `POST /api/attempt/finish` dengan
+`{ sesiId, dipaksaOleh: PANITIA_PIN }` — endpoint yang sama dipakai siswa,
+jadi hasil selalu dihitung ulang dari jawaban yang sudah tersimpan di DB.
 
 ## Siapa saja yang sudah dimigrasikan ke tabel `siswa`
 
@@ -84,12 +103,10 @@ dari komputer Anda sendiri, tapi seluruh isi filenya sudah siap di paket ini,
 tinggal salin-tempel.
 
 
-1. **Halaman tes untuk siswa** — pindahkan UI dari `index.html` lama (render
-   soal, timer, anti-cheat) ke `app/`, sambungkan ke API di atas sesuai
-   `client-patch/PATCH-index-html.md` (autosave per jawaban, bukan kirim di akhir).
-2. **Dashboard panitia & Live Monitor** — bisa langsung `select * from v_live_monitor`,
-   jauh lebih sederhana dari sebelumnya (tidak perlu sheet terpisah).
-3. **Tombol "Kirim Manual / Paksa Selesai"** di Live Monitor baru — panggil
+Status: sudah selesai —
+1. ✅ **Halaman tes untuk siswa** (`app/tes/page.js`) — desain disamakan dengan SimTKA-v2.
+2. ✅ **Dashboard panitia & Live Monitor** (`app/admin/page.js` + `app/api/admin/monitor/`).
+3. ✅ **Tombol "Paksa Selesaikan"** di Live Monitor — panggil
    `POST /api/attempt/finish` dengan `{ sesiId, dipaksaOleh: PANITIA_PIN }`.
 4. Deploy: `vercel --prod` (hubungkan env `DATABASE_URL` & `PANITIA_PIN` di
    dashboard Vercel), pola sama seperti `simtka-2026-new`.
