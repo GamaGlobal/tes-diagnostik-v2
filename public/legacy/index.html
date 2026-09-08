@@ -1,0 +1,1878 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Simulasi Tes IST</title>
+<style>
+  :root{
+    --bg:#F3F0E6;
+    --ink:#20242B;
+    --ink-soft:#565B63;
+    --panel:#FFFFFF;
+    --line:#DCD6C7;
+    --accent:#0E5C63;
+    --accent-dark:#0A4247;
+    --warn:#9A3B2E;
+    --good:#2F6D3A;
+    --badge-bg:#EFE9D8;
+    font-size:16px;
+  }
+  *{box-sizing:border-box;}
+  html{
+    overscroll-behavior-y:contain;
+  }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:40px;
+    overscroll-behavior-y:contain;
+  }
+  h1,h2,h3{font-family:Georgia,'Iowan Old Style',serif; margin:0 0 8px;}
+  .no-select, .no-select *{
+    -webkit-user-select:none;
+    -moz-user-select:none;
+    -ms-user-select:none;
+    user-select:none;
+    -webkit-touch-callout:none;
+  }
+  .no-select input{
+    -webkit-user-select:text;
+    user-select:text;
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:20px 16px 60px;}
+  .top-bar{
+    position:sticky;top:0;z-index:20;
+    background:var(--bg);
+    padding:10px 16px;
+    border-bottom:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;
+    gap:10px;
+  }
+  .dots{display:flex;gap:5px;flex-wrap:wrap;}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--line);}
+  .dot.done{background:var(--good);}
+  .dot.current{background:var(--accent);transform:scale(1.3);}
+  .timer{
+    font-family:'SFMono-Regular',Menlo,monospace;
+    font-variant-numeric:tabular-nums;
+    font-size:1.15rem;font-weight:700;
+    padding:4px 10px;border-radius:6px;
+    background:var(--panel);border:1px solid var(--line);
+  }
+  .timer.low{color:var(--warn);border-color:var(--warn);}
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:20px;
+    margin-bottom:16px;
+  }
+  .badge{
+    width:74px;height:74px;border-radius:50%;
+    border:2px dashed var(--accent);
+    display:flex;align-items:center;justify-content:center;
+    font-family:Georgia,serif;font-weight:700;font-size:1.4rem;
+    color:var(--accent-dark);margin:0 auto 14px;
+    background:var(--badge-bg);
+  }
+  .center{text-align:center;}
+  .btn{
+    display:inline-block;
+    background:var(--accent);
+    color:#fff;border:none;
+    padding:13px 22px;
+    border-radius:8px;
+    font-size:1rem;font-weight:600;
+    cursor:pointer;
+    text-align:center;
+  }
+  .btn:active{background:var(--accent-dark);}
+  .btn.secondary{
+    background:transparent;color:var(--accent-dark);
+    border:1px solid var(--accent);
+  }
+  .btn.block{display:block;width:100%;}
+  .muted{color:var(--ink-soft);font-size:0.92rem;line-height:1.5;}
+  .q-item{border-bottom:1px solid var(--line);padding:16px 0;}
+  .q-item:last-child{border-bottom:none;}
+  .q-num{font-weight:700;color:var(--accent-dark);margin-bottom:8px;}
+  .opt-list{display:grid;gap:8px;margin-top:8px;}
+  .opt{
+    border:1px solid var(--line);
+    background:var(--panel);
+    border-radius:8px;
+    padding:10px 12px;
+    text-align:left;
+    font-size:0.97rem;
+    cursor:pointer;
+    display:flex;gap:10px;align-items:center;
+  }
+  .opt .let{
+    width:22px;height:22px;border-radius:50%;
+    border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;
+    font-size:0.75rem;font-weight:700;flex-shrink:0;
+  }
+  .opt.selected{border-color:var(--accent);background:#EAF3F2;}
+  .opt.selected .let{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .shape-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;}
+  .shape-row .qm{font-size:1.6rem;font-weight:700;color:var(--ink-soft);}
+  .fig-opts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;}
+  .fig-opts .opt{flex-direction:column;padding:12px 4px;}
+  .cube-net{
+    display:grid;
+    grid-template-columns:repeat(4,56px);
+    grid-template-rows:repeat(3,56px);
+    gap:4px;justify-content:center;margin:14px 0;
+  }
+  .cube-cell{
+    border:1px solid var(--line);border-radius:6px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:1.5rem;background:#FAF8F2;
+  }
+  .cube-cell.target{border:2px solid var(--accent);background:#EAF3F2;}
+  .cube-opts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;}
+  .cube-opts .opt{flex-direction:column;font-size:1.6rem;padding:12px 4px;}
+  .mem-table{width:100%;border-collapse:collapse;margin:14px 0;}
+  .mem-table td{padding:8px 10px;border-bottom:1px solid var(--line);font-size:0.95rem;}
+  .mem-table td:first-child{color:var(--ink-soft);width:45%;}
+  .progress-line{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:6px 0 2px;}
+  .progress-fill{height:100%;background:var(--accent);}
+  .overlay{
+    position:fixed;inset:0;background:rgba(32,36,43,0.92);
+    color:#fff;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:10px;z-index:50;text-align:center;padding:20px;
+  }
+  .result-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:0.95rem;}
+  .result-row:last-child{border-bottom:none;}
+  .iq-number{font-family:Georgia,serif;font-size:4rem;font-weight:700;color:var(--accent-dark);line-height:1;}
+  .tag{display:inline-block;padding:4px 12px;border-radius:20px;background:var(--badge-bg);color:var(--accent-dark);font-weight:700;font-size:0.9rem;}
+  .disclaimer{font-size:0.82rem;color:var(--ink-soft);border-top:1px dashed var(--line);padding-top:12px;margin-top:16px;line-height:1.5;}
+  .violation-overlay{
+    position:fixed;inset:0;z-index:100;
+    background:rgba(154,59,46,0.97);
+    color:#fff;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:10px;text-align:center;padding:24px;
+    animation:flashWarn 0.5s ease-in-out 3;
+  }
+  @keyframes flashWarn{0%,100%{background:rgba(154,59,46,0.97);}50%{background:rgba(220,38,38,0.97);}}
+  .lock-screen{
+    position:fixed;inset:0;z-index:110;
+    background:#20242B;color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    padding:20px;overflow-y:auto;
+  }
+  .lock-card{max-width:420px;width:100%;text-align:center;}
+  .lock-card input{
+    width:100%;padding:12px;border-radius:8px;border:1px solid #565B63;
+    background:#2B303A;color:#fff;font-size:1.2rem;text-align:center;
+    letter-spacing:4px;margin:14px 0 8px;
+  }
+  .violation-log{text-align:left;font-size:0.85rem;color:#B9C0C7;max-height:160px;overflow-y:auto;background:#2B303A;border-radius:8px;padding:10px;margin-top:14px;}
+  .confirm-overlay{
+    position:fixed;inset:0;z-index:105;
+    background:rgba(32,36,43,0.75);
+    display:flex;align-items:center;justify-content:center;
+    padding:20px;
+  }
+  .confirm-card{
+    background:var(--panel);border-radius:12px;padding:24px 20px;
+    max-width:380px;width:100%;text-align:center;
+  }
+  .confirm-card .btn-row{display:flex;gap:10px;margin-top:16px;}
+  .confirm-card .btn-row .btn{flex:1;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ============ KONFIGURASI GOOGLE SHEETS ============ */
+/* Tempel URL Web App Apps Script Anda di sini setelah deploy (lihat Code.gs) */
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxWx1FS-0htyoWmfPAT8adeoOQpxhRjscdcLIE8qNNZOPsTcuZAAtwGzw8ytlUVjxRB/exec';
+/* Penanda revisi bank soal — dikirim bersama setiap hasil agar panitia bisa membedakan
+   hasil yang menggunakan bank soal sebelum vs sesudah audit psikometri.
+   Naikkan nilai ini setiap kali isi bank soal (SE/WA/AN/GE/FA/WU/dst.) diubah lagi. */
+const ITEM_BANK_VERSION = '2026-08-audit-v2';
+/* Supaya ratusan peserta yang selesai di waktu yang nyaris sama tidak semua kirim hasil
+   ke server di detik yang sama persis, kirim hasil akhir ditunda acak 0 - SUBMIT_JITTER_MAX_MS
+   milidetik. Halaman "Tes Selesai" tetap tampil langsung ke siswa, cuma pengiriman ke server-nya
+   yang ditunda sedikit di belakang layar. Hasilnya sudah dicadangkan ke localStorage duluan,
+   jadi aman walau siswa keburu menutup halaman sebelum jitter-nya habis (akan dikirim ulang
+   otomatis begitu index.html dibuka lagi di HP yang sama). */
+const SUBMIT_JITTER_MAX_MS = 45000;
+
+/* ============ KONFIGURASI ANTI-CURANG ============ */
+const SUPERVISOR_PIN = '246810'; /* ganti dengan PIN rahasia Anda sendiri */
+const MAX_VIOLATIONS = 3;
+const SESSION_KEY = 'tesDiagnostikSession_v1';
+const SESSION_MAX_AGE_MS = 6*60*60*1000; /* sesi tersimpan dianggap basi setelah 6 jam tidak aktif */
+
+let studentName='';
+let studentSchool='';
+let studentClass='';
+let studentNIS='';
+
+/* ============ UTILITIES ============ */
+function shuffle(arr){
+  const a=[...arr];
+  for(let i=a.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
+}
+function fmt(s){
+  const m=Math.floor(s/60), sec=s%60;
+  return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');
+}
+function shuffledMC(q,options,answerIdx){
+  const correct=options[answerIdx];
+  const opts=shuffle(options);
+  return {kind:'text',q,options:opts,answer:opts.indexOf(correct)};
+}
+
+/* ============ QUESTION DATA: VERBAL ============ */
+const SE_RAW=[
+["Musim kemarau berlawanan dengan musim ....",["panas","hujan","dingin","kering"],1],
+["Karena jalan macet, Andi terlambat ... kantor.",["dari","ke","di","pada"],1],
+["Semua siswa wajib ... peraturan sekolah.",["melanggar","menaati","mengabaikan","menolak"],1],
+["Ayah membaca koran ... pagi hari.",["pada","dari","ke","tentang"],0],
+["Karena rajin belajar, nilainya ... meningkat.",["selalu","jarang","tidak pernah","mustahil"],0],
+["Karena listrik padam sejak semalam, es di dalam kulkas perlahan mulai ....",["membeku","mencair","memuai","menguap"],1],
+["Karena terlalu lelah, ia langsung ... setelah sampai rumah.",["berlari","tidur","memasak","berbicara"],1],
+["Perpustakaan adalah tempat untuk ... buku.",["menjual","membaca","membakar","membuang"],1],
+["Petani itu menanam padi di ....",["laut","sawah","gedung","pasar"],1],
+["Karena hujan deras, jalanan menjadi ....",["kering","becek","berdebu","rapi"],1],
+["Ia menabung setiap bulan agar bisa membeli ....",["utang","rumah","kemarahan","kelaparan"],1],
+["Guru itu ... murid-muridnya dengan sabar.",["mengabaikan","membimbing","menghindari","memarahi terus"],1],
+["Karena macet total, ia memutuskan naik ... agar lebih cepat sampai.",["mobil pribadi","motor","kereta","becak"],2],
+["Dokter menyarankan pasien untuk ... sebelum operasi.",["makan banyak","berpuasa beberapa jam","berlari maraton","begadang"],1],
+["Karena baterainya habis, ponsel itu perlu ....",["dibuang","diisi daya","dipecahkan","dibekukan"],1],
+["Karena langit gelap dan gerimis mulai turun, ia bergegas mengambil ... sebelum keluar rumah.",["payung","kipas angin","kacamata hitam","topi pantai"],0],
+["Buku itu sangat tebal sehingga ia butuh waktu lama untuk ....",["membakarnya","menyelesaikannya","melipatnya","menjualnya"],1],
+["Karena sering terlambat, Budi mendapat ... dari atasannya.",["pujian","teguran","hadiah","promosi cepat"],1],
+["Karena diletakkan di tempat gelap selama berminggu-minggu, tanaman itu perlahan menjadi ....",["subur","layu","berbuah lebat","semakin hijau"],1],
+["Karena ingin sehat, ia mulai rutin ....",["merokok","berolahraga","begadang","makan sembarangan"],1]
+];
+
+const WA_RAW=[
+[["Apel","Jeruk","Wortel","Mangga"],2],
+[["Gitar","Biola","Kecapi","Piano"],3],
+[["Berlari","Melompat","Duduk","Berenang"],2],
+[["Kucing","Anjing","Ayam","Batu"],3],
+[["Merah","Biru","Hijau","Besar"],3],
+[["Senin","Selasa","Januari","Rabu"],2],
+[["Segitiga","Lingkaran","Persegi","Merah"],3],
+[["Dokter","Perawat","Guru","Sepatu"],3],
+[["Pensil","Pulpen","Spidol","Buku"],3],
+[["Ikan","Paus","Lumba-lumba","Ayam"],3],
+[["Jakarta","Bandung","Indonesia","Surabaya"],2],
+[["Matahari","Bulan","Bintang","Sungai"],3],
+[["Membaca","Menulis","Berhitung","Tidur"],3],
+[["Padi","Jagung","Gandum","Kerbau"],3],
+[["Emas","Perak","Besi","Kapas"],3],
+[["Kompor","Panci","Wajan","Kasur"],3],
+[["Gembira","Sedih","Marah","Berlari"],3],
+[["Panas","Dingin","Hangat","Lemari"],3],
+[["Presiden","Gubernur","Camat","Pabrik"],3],
+[["Hujan","Salju","Kabut","Meja"],3]
+];
+
+const AN_RAW=[
+["Dokter","Rumah Sakit","Guru",["Buku","Sekolah","Murid","Papan tulis"],1],
+["Kaki","Sepatu","Kepala",["Rambut","Topi","Leher","Wajah"],1],
+["Ikan","Air","Burung",["Sarang","Udara","Pohon","Sayap"],1],
+["Pisau","Memotong","Palu",["Mengukur","Memaku","Menulis","Menggambar"],1],
+["Siang","Terang","Malam",["Gelap","Panas","Ramai","Sepi"],0],
+["Api","Panas","Es",["Keras","Dingin","Cair","Berat"],1],
+["Guru","Mengajar","Dokter",["Mengobati","Berdagang","Menyanyi","Melukis"],0],
+["Roda","Mobil","Sayap",["Ikan","Burung","Ular","Kucing"],1],
+["Petani","Sawah","Nelayan",["Kantor","Laut","Pasar","Sekolah"],1],
+["Buku","Membaca","Piano",["Menari","Bermain musik","Melukis","Berlari"],1],
+["Jarum","Menjahit","Sekop",["Menggali","Menulis","Memasak","Melukis"],0],
+["Matahari","Siang","Bulan",["Malam","Pagi","Sore","Subuh"],0],
+["Pena","Menulis","Gunting",["Memotong","Menempel","Mengukur","Melipat"],0],
+["Ayah","Anak","Guru",["Sekolah","Murid","Buku","Kelas"],1],
+["Padi","Sawah","Ikan",["Kolam","Gunung","Gurun","Kota"],0],
+["Lebah","Madu","Sapi yang diperah",["Daging","Susu","Telur","Kulit"],1],
+["Termometer","Suhu","Timbangan",["Panjang","Berat","Waktu","Volume"],1],
+["Kompas","Arah","Jam",["Cuaca","Waktu","Berat","Jarak"],1],
+["Pelukis","Kanvas","Penulis",["Kertas","Kayu","Batu","Kaca"],0],
+["Kunci","Membuka","Sabun",["Mencuci","Memasak","Menulis","Mengukur"],0]
+];
+
+const GE_RAW=[
+["Piano","Gitar",["Alat musik tradisional","Alat musik","Alat musik elektronik","Aksesori musik"],1],
+["Kereta api","Pesawat",["Alat transportasi darat","Alat transportasi laut","Alat transportasi","Kendaraan pribadi"],2],
+["Jam","Termometer",["Alat pengukur panjang","Alat pengukur berat","Alat pengukur","Alat komunikasi"],2],
+["Puisi","Lagu",["Karya sastra naratif","Karya seni berirama","Karya seni rupa","Karya seni pertunjukan"],1],
+["Apel","Jeruk",["Sayuran","Buah-buahan","Umbi","Kacang-kacangan"],1],
+["Dokter","Perawat",["Profesi bidang kesehatan","Petani","Pedagang","Seniman"],0],
+["Sungai","Danau",["Sumber air","Gunung","Padang pasir","Hutan"],0],
+["Kucing","Harimau",["Keluarga kucing (felidae)","Burung","Ikan","Serangga"],0],
+["Matahari","Bintang",["Benda langit pemancar cahaya sendiri","Planet","Satelit","Komet"],0],
+["Sepeda","Motor",["Kendaraan roda dua","Pesawat","Kapal","Kereta"],0],
+["Buku","Majalah",["Bahan bacaan","Alat tulis","Media cetak berupa poster","Dokumen resmi negara"],0],
+["Emas","Perak",["Logam mulia","Logam berat","Logam campuran (aloi)","Mineral tambang secara umum"],0],
+["Hujan","Salju",["Bentuk presipitasi","Jenis awan","Fenomena atmosfer non-presipitasi","Jenis iklim"],0],
+["Padi","Jagung",["Tanaman pangan","Hewan ternak","Alat pertanian","Jenis pupuk"],0],
+["Novel","Cerpen",["Karya sastra prosa","Karya sastra puisi","Naskah drama","Karya sastra lisan (folklore)"],0],
+["Gunung","Bukit",["Bentang alam menjulang tinggi","Sungai","Laut","Danau"],0]
+];
+
+const RA_RAW=[
+["Seorang pedagang membeli 12 karung beras seharga Rp150.000/karung, lalu dijual dengan untung Rp20.000/karung. Berapa total penjualan?",["Rp2.040.000","Rp1.800.000","Rp2.400.000","Rp1.700.000"],0],
+["Sebuah bus melaju 60 km/jam selama 2,5 jam. Berapa jarak yang ditempuh?",["120 km","150 km","180 km","100 km"],1],
+["3 pekerja menyelesaikan pekerjaan dalam 8 hari. Berapa hari untuk 6 pekerja (kecepatan sama)?",["16 hari","4 hari","8 hari","12 hari"],1],
+["Harga baju Rp150.000 didiskon 20%. Berapa harga setelah diskon?",["Rp130.000","Rp120.000","Rp135.000","Rp140.000"],1],
+["Sebuah kelas terdiri 40 siswa, 60% laki-laki. Berapa jumlah siswa perempuan?",["24","16","20","18"],1],
+["Jika 5 kg apel harganya Rp75.000, berapa harga 8 kg?",["Rp100.000","Rp110.000","Rp120.000","Rp130.000"],2],
+["Sebuah tangki berisi 200 liter air, terpakai 35%. Berapa sisa air?",["70 liter","130 liter","140 liter","150 liter"],1],
+["Umur Ani 3 kali umur adiknya. Jika jumlah umur mereka 32 tahun, berapa umur Ani?",["20","24","8","28"],1],
+["Sebuah mobil menempuh 240 km dalam 4 jam. Berapa kecepatan rata-ratanya?",["50 km/jam","55 km/jam","60 km/jam","65 km/jam"],2],
+["Jika 1 lusin pensil harganya Rp24.000, berapa harga 3 pensil?",["Rp5.000","Rp6.000","Rp7.000","Rp8.000"],1],
+["Sebuah toko memberi diskon 15% untuk barang seharga Rp200.000. Berapa harga akhirnya?",["Rp170.000","Rp165.000","Rp180.000","Rp175.000"],0],
+["Nilai rata-rata 5 siswa adalah 80. Jika 1 siswa lagi ikut dengan nilai 92, berapa rata-rata baru (6 siswa)?",["81","82","83","84"],1],
+["Jarak Jakarta-Bandung 150 km ditempuh 3 jam. Jika kecepatan menjadi 2x lipat, berapa waktu tempuh baru?",["1 jam","1,5 jam","2 jam","2,5 jam"],1],
+["Sebuah toko roti memproduksi 300 roti/hari, 20% tidak terjual. Berapa roti terjual?",["220","230","240","250"],2],
+["Rina membeli 7 buku seharga Rp8.000/buku dengan uang Rp100.000. Berapa kembaliannya?",["Rp42.000","Rp44.000","Rp46.000","Rp48.000"],1],
+["Sebuah kolam renang panjang 25 m dan lebar 10 m. Berapa luasnya?",["225 m²","235 m²","250 m²","260 m²"],2],
+["Suku bunga tabungan 5% per tahun, tabungan awal Rp1.000.000. Berapa saldo setelah 1 tahun?",["Rp1.005.000","Rp1.050.000","Rp1.500.000","Rp1.055.000"],1],
+["Sebuah pabrik memproduksi 1.200 unit dalam 8 jam. Berapa unit per jam?",["120","140","150","160"],2],
+["Jika 2/5 dari sejumlah siswa adalah 40 orang, berapa jumlah total siswa?",["80","90","100","110"],2],
+["Sebuah truk mengangkut 3 ton barang sekali jalan. Berapa kali jalan diperlukan untuk 13,5 ton?",["4 kali","5 kali","6 kali","7 kali"],1]
+];
+
+/* ============ QUESTION DATA: VERBAL — LEVEL SMA ============ */
+const SMA_SE_RAW=[
+["Karena proyek tersebut menuai kritik keras dari publik, perusahaan akhirnya memutuskan untuk ... rencana tersebut.",["melanjutkan","membatalkan","mempercepat","merahasiakan"],1],
+["Meskipun sudah diperingatkan berkali-kali, ia tetap ... pada kebiasaan buruknya.",["bertahan","berubah","menyesal","memperbaiki"],0],
+["Karena argumennya didukung banyak bukti kuat, pendapatnya menjadi semakin sulit untuk ... oleh lawan bicara.",["dipahami","dibantah","disetujui","diabaikan"],1],
+["Karena jadwal penerbangannya ditunda hingga larut malam, para penumpang mulai terlihat ... menunggu di ruang tunggu.",["gembira","gelisah","bersemangat","puas"],1],
+["Walaupun sudah berulang kali dijelaskan, ia tetap tidak ... maksud dari instruksi tersebut.",["memahami","menjalankan","mengabaikan","menyetujui"],0],
+["Karena selalu bersikap jujur dalam setiap situasi, ia dikenal sebagai orang yang sangat ... oleh rekan-rekannya.",["dipercaya","dicurigai","dihindari","diabaikan"],0],
+["Karena anggaran yang tersedia jauh lebih kecil daripada kebutuhan proyek, panitia terpaksa ... beberapa rencana kegiatan.",["menambah","memangkas","memperluas","mempercepat"],1],
+["Meskipun telah diberi banyak kesempatan, kualitas pekerjaannya tidak kunjung ... sejak awal bergabung.",["menurun","membaik","berubah drastis","memburuk"],1],
+["Karena harga bahan baku terus melonjak, para pengusaha kecil semakin ... untuk mempertahankan usahanya.",["bersemangat","kesulitan","diuntungkan","dimanjakan"],1],
+["Karena kedua bersaudara itu dibesarkan dalam lingkungan yang sama, sifat mereka pun terlihat cukup ... satu sama lain.",["bertentangan","mirip","asing","berlawanan"],1],
+["Semakin sering ia berlatih berbicara di depan umum, rasa gugupnya pun semakin ... setiap kali tampil.",["bertambah","berkurang","menetap","memuncak"],1],
+["Karena laporan itu ditulis tanpa data pendukung yang jelas, banyak pihak meragukan ... isinya.",["kejelasan","keakuratan","kepanjangan","keindahan"],1],
+["Setelah sistem baru diterapkan, proses produksi yang tadinya lambat kini menjadi jauh lebih ....",["efisien","rumit","mahal","berisiko"],0],
+["Karena tuduhan terhadapnya tidak didukung bukti apa pun, ia akhirnya dinyatakan ... oleh pengadilan.",["bersalah","tidak bersalah","terlambat","istimewa"],1],
+["Meskipun harga barang tersebut naik drastis, permintaan pasar terhadapnya justru tetap ... karena dianggap kebutuhan pokok.",["menurun tajam","tinggi","menghilang","tidak menentu"],1],
+["Karena selalu datang tepat waktu dan menyelesaikan tugas dengan baik, ia mendapat ... dari atasannya.",["teguran","apresiasi","peringatan","sanksi"],1],
+["Setelah melalui proses negosiasi yang panjang, kedua belah pihak akhirnya mencapai ... yang menguntungkan keduanya.",["perselisihan","kesepakatan","kebuntuan","konflik"],1],
+["Karena minim pengalaman di bidang tersebut, ia memilih untuk ... terlebih dahulu sebelum mengambil keputusan besar.",["nekat bertindak","berkonsultasi dengan ahli","mengabaikan saran","bertindak sendiri"],1],
+["Walaupun cuaca memburuk sepanjang perjalanan, tim pendaki itu tetap ... menuju puncak dengan penuh kehati-hatian.",["menyerah","melanjutkan","berbalik arah","berhenti total"],1],
+["Karena terus-menerus menunda pekerjaan, tugas yang menumpuk itu membuatnya semakin ... menjelang tenggat waktu.",["tenang","tertekan","santai","percaya diri"],1]
+];
+
+const SMA_WA_RAW=[
+[["Oksigen","Nitrogen","Karbon dioksida","Air"],3],
+[["Demokrasi","Monarki","Oligarki","Konstitusi"],3],
+[["Mitosis","Meiosis","Fotosintesis","Fertilisasi"],2],
+[["Sonata","Simfoni","Konserto","Prosa"],3],
+[["Asteroid","Komet","Meteor","Galaksi"],3],
+[["Inflasi","Deflasi","Resesi","Metamorfosis"],3],
+[["Segitiga siku-siku","Lingkaran","Persegi panjang","Kubus"],3],
+[["Adjektiva","Verba","Nomina","Paragraf"],3],
+[["Litosfer","Atmosfer","Hidrosfer","Fauna"],3],
+[["Konduktor","Isolator","Semikonduktor","Voltase"],3],
+[["Protagonis","Antagonis","Tritagonis","Alur"],3],
+[["Pancasila","UUD 1945","Bhinneka Tunggal Ika","Presiden"],3],
+[["Karbohidrat","Protein","Lemak","Enzim"],3],
+[["Barisan aritmetika","Barisan geometri","Deret Fibonacci","Persamaan kuadrat"],3],
+[["Ekspor","Impor","Neraca perdagangan","Mitosis"],3],
+[["Vertebrata","Invertebrata","Mamalia","Metamorfosis"],3],
+[["Asam","Basa","Garam","Molekul"],3],
+[["Puisi","Cerpen","Novel","Deklamasi"],3],
+[["Longitudinal","Transversal","Elektromagnetik","Amplitudo"],3],
+[["Republik","Federasi","Kesatuan","Presiden"],3]
+];
+
+const SMA_AN_RAW=[
+["Termometer","Suhu","Barometer",["Kelembapan","Tekanan udara","Kecepatan angin","Curah hujan"],1],
+["Oksigen","Bernapas","Klorofil",["Berkembang biak","Fotosintesis","Respirasi","Ekskresi"],1],
+["Konstitusi","Negara","Anggaran Dasar",["Organisasi","Presiden","Rakyat","Hakim"],0],
+["Penulis","Novel","Komposer",["Lukisan","Simfoni","Patung","Drama"],1],
+["Asam","pH rendah","Basa",["pH rendah","pH tinggi","pH netral","Tidak berpH"],1],
+["Inflasi","Kenaikan harga","Deflasi",["Kenaikan harga","Penurunan harga","Harga tetap","Krisis moneter"],1],
+["DNA","Gen","Buku",["Sampul","Bab","Penulis","Penerbit"],1],
+["Jantung","Memompa darah","Ginjal",["Mencerna makanan","Menyaring darah","Bernapas","Berpikir"],1],
+["Fotosintesis","Tumbuhan","Respirasi seluler",["Batu","Semua makhluk hidup","Air","Udara"],1],
+["Legislatif","Membuat undang-undang","Yudikatif",["Menjalankan pemerintahan","Mengadili pelanggaran hukum","Memungut pajak","Mencetak uang"],1],
+["Bilangan prima","2,3,5,7","Bilangan genap",["1,3,5,7","2,4,6,8","3,6,9,12","1,4,9,16"],1],
+["Meiosis","Sel kelamin","Mitosis",["Sel kelamin","Sel tubuh","Sel darah merah saja","Virus"],1],
+["Gempa bumi","Seismograf","Suhu",["Barometer","Termometer","Higrometer","Anemometer"],1],
+["Produsen","Tumbuhan","Konsumen",["Matahari","Herbivora","Tanah","Air"],1],
+["Revolusi","Perubahan cepat","Evolusi",["Perubahan mendadak","Perubahan bertahap","Tidak ada perubahan","Perubahan acak"],1],
+["Premis","Kesimpulan","Sebab",["Alasan","Akibat","Fakta","Data"],1],
+["Elektron","Bermuatan negatif","Proton",["Bermuatan negatif","Bermuatan positif","Tidak bermuatan","Bermuatan ganda"],1],
+["Puisi","Bait","Cerpen",["Rima","Paragraf","Diksi","Alur saja"],1],
+["Ekspor","Menjual ke luar negeri","Impor",["Menjual ke luar negeri","Membeli dari luar negeri","Menyimpan barang","Memproduksi barang"],1],
+["Katalis","Mempercepat reaksi","Inhibitor",["Mempercepat reaksi","Memperlambat reaksi","Tidak berpengaruh","Mengubah warna"],1]
+];
+
+const SMA_GE_RAW=[
+["Mitosis","Meiosis",["Proses pembelahan sel","Proses metabolisme sel","Proses transportasi zat dalam sel","Jenis jaringan sel"],0],
+["Inflasi","Deflasi",["Jenis kebijakan fiskal","Fenomena perubahan tingkat harga umum","Jenis kebijakan moneter","Bentuk investasi jangka panjang"],1],
+["Demokrasi","Monarki",["Bentuk negara","Sistem pemerintahan","Ideologi politik","Sistem ekonomi"],1],
+["Asam","Basa",["Golongan senyawa kimia berdasarkan sifat pH","Golongan senyawa kimia berdasarkan wujud zat","Golongan senyawa kimia berdasarkan ikatan","Jenis reaksi kimia"],0],
+["Novel","Cerpen",["Karya sastra berbentuk prosa","Karya sastra berbentuk puisi","Naskah drama","Karya sastra lisan"],0],
+["Legislatif","Yudikatif",["Cabang kekuasaan dalam pemerintahan","Lembaga negara nonstruktural","Partai politik","Organisasi kemasyarakatan"],0],
+["Longitudinal","Transversal",["Jenis gelombang berdasarkan arah rambat","Jenis gelombang berdasarkan medium rambat","Jenis gelombang elektromagnetik saja","Sifat gelombang bunyi"],0],
+["Ekspor","Impor",["Kegiatan perdagangan internasional","Kegiatan produksi dalam negeri","Kebijakan fiskal","Jenis pajak perdagangan"],0],
+["Protagonis","Antagonis",["Tokoh utama dalam cerita","Unsur intrinsik cerita berupa alur","Gaya bahasa","Unsur puisi"],0],
+["Karbohidrat","Protein",["Zat makronutrien bagi tubuh","Jenis vitamin","Jenis mineral esensial","Jenis hormon tubuh"],0],
+["Barisan aritmetika","Barisan geometri",["Pola bilangan matematis","Bentuk fungsi kuadrat","Jenis persamaan diferensial","Bentuk geometri ruang"],0],
+["Litosfer","Hidrosfer",["Lapisan bumi","Lapisan atmosfer","Jenis batuan beku","Jenis mineral tambang"],0],
+["Elektron","Proton",["Partikel penyusun atom","Jenis unsur kimia","Jenis ikatan kimia","Jenis molekul"],0],
+["Puisi","Prosa",["Bentuk karya sastra","Jenis majas","Unsur intrinsik cerita","Aliran sastra"],0],
+["Revolusi","Evolusi",["Proses perubahan","Sistem pemerintahan","Cabang ilmu biologi","Jenis fenomena sosial"],0],
+["Katalis","Inhibitor",["Zat yang memengaruhi laju reaksi kimia","Jenis larutan asam","Jenis larutan basa","Golongan logam"],0]
+];
+
+const SMA_RA_RAW=[
+["Jika 2x + 5 = 17, berapakah nilai x?",["5","6","7","8"],1],
+["Sebuah dadu dilempar sekali. Berapa peluang muncul angka genap?",["1/6","1/3","1/2","2/3"],2],
+["Jika f(x) = 3x² − 2, berapa nilai f(2)?",["8","10","12","14"],1],
+["Suatu barisan aritmetika: 3, 7, 11, 15, .... Berapa suku ke-10?",["35","39","41","43"],1],
+["Jika log 2 = 0,301, berapa nilai log 8? (log 8 = 3 log 2)",["0,602","0,903","1,204","1,505"],1],
+["Sebuah segitiga siku-siku memiliki sisi 6 cm dan 8 cm. Berapa panjang sisi miringnya?",["9 cm","10 cm","12 cm","14 cm"],1],
+["Dalam suatu kelas, perbandingan siswa laki-laki dan perempuan adalah 3:5. Jika jumlah siswa 40, berapa jumlah siswa laki-laki?",["12","15","18","20"],1],
+["Jika P(A) = 0,4 dan P(B) = 0,3 dan A, B saling bebas, berapa P(A dan B)?",["0,12","0,7","0,1","0,35"],0],
+["Sebuah mobil dibeli seharga Rp200.000.000 dan mengalami penyusutan 10% per tahun. Berapa nilainya setelah 1 tahun?",["Rp160.000.000","Rp170.000.000","Rp180.000.000","Rp190.000.000"],2],
+["Jika 3/4 dari suatu bilangan adalah 60, berapa bilangan tersebut?",["75","80","85","90"],1],
+["Suatu bunga majemuk 10% per tahun, modal awal Rp1.000.000. Berapa nilai setelah 2 tahun (dibulatkan)?",["Rp1.200.000","Rp1.210.000","Rp1.220.000","Rp1.100.000"],1],
+["Median dari data: 4, 8, 6, 5, 9, 7, 3 adalah ....",["5","6","7","8"],1],
+["Jika sin θ = 0,6 dan θ sudut lancip, berapa nilai cos θ?",["0,4","0,6","0,8","1,0"],2],
+["Volume kubus dengan panjang rusuk 5 cm adalah ....",["100 cm³","125 cm³","150 cm³","175 cm³"],1],
+["Jika himpunan A={1,2,3,4} dan B={3,4,5,6}, berapa banyak anggota A∩B?",["1","2","3","4"],1],
+["Suatu fungsi kuadrat y = x² − 4x + 3 memiliki akar-akar ....",["1 dan 3","−1 dan 3","1 dan −3","2 dan 3"],0],
+["Sebuah kereta melaju dengan percepatan konstan dari 0 menjadi 20 m/s dalam 5 detik. Berapa percepatannya?",["2 m/s²","4 m/s²","5 m/s²","10 m/s²"],1],
+["Jika harga barang naik 25% menjadi Rp125.000, berapa harga awal?",["Rp95.000","Rp100.000","Rp105.000","Rp110.000"],1],
+["Dalam suatu ujian, nilai standar deviasi menunjukkan ....",["Nilai rata-rata data","Sebaran/variasi data dari rata-rata","Nilai tertinggi data","Jumlah total data"],1],
+["Jika 5 orang dapat menyelesaikan proyek dalam 12 hari, berapa hari yang dibutuhkan 3 orang (kecepatan kerja sama)?",["15 hari","18 hari","20 hari","24 hari"],2]
+];
+
+/* ============ GENERATORS: NUMERIC SERIES (ZR) ============ */
+function uniqueDistractors(correct,count,spread){
+  const set=new Set([correct]);
+  const result=[];
+  let attempts=0;
+  while(result.length<count && attempts<80){
+    attempts++;
+    const delta=Math.floor(Math.random()*spread*2+1)-spread;
+    if(delta===0) continue;
+    const val=correct+delta;
+    if(val<=0 || set.has(val)) continue;
+    set.add(val); result.push(val);
+  }
+  let filler=1;
+  while(result.length<count){
+    const val=correct+filler*3+1;
+    if(!set.has(val)){set.add(val); result.push(val);}
+    filler++;
+  }
+  return result;
+}
+function generateZR(i,level){
+  const type=i%5;
+  let full=[];
+  if(level==='sma'){
+    if(type===0){
+      let a=2+(i%4), d=3+(i%3);
+      full=[a];
+      for(let k=1;k<6;k++){ full.push(full[k-1]+d); d+=2; }
+    } else if(type===1){
+      let v=2+(i%3);
+      full=[v];
+      for(let k=1;k<6;k++){ v=(k%2===1)?v*2:v+5; full.push(v); }
+    } else if(type===2){
+      let v=1+(i%2);
+      full=[v];
+      for(let k=1;k<6;k++){ v*=3; full.push(v); }
+    } else if(type===3){
+      const a=3+(i%4), b=2+(i%3);
+      let v=1+(i%3);
+      full=[v];
+      for(let k=1;k<6;k++){ v+=(k%2===1?a:b); full.push(v); }
+    } else {
+      const a=1+(i%3), b=2+(i%2);
+      full=[a,b];
+      for(let k=2;k<6;k++){ full.push(full[k-1]+2*full[k-2]); }
+    }
+  } else {
+    if(type===0){
+      const start=2+i, step=3+(i%5);
+      let v=start;
+      for(let k=0;k<6;k++){full.push(v); v+=step;}
+    } else if(type===1){
+      const start=1+(i%3), ratio=2+(i%2);
+      let v=start;
+      for(let k=0;k<6;k++){full.push(v); v*=ratio;}
+    } else if(type===2){
+      const off=i%4;
+      for(let k=1;k<=6;k++){full.push((k+off)*(k+off));}
+    } else if(type===3){
+      const a=2+(i%3);
+      full=[a];
+      for(let k=1;k<6;k++){
+        full.push(k%2===1 ? full[k-1]*2 : full[k-1]-1);
+      }
+    } else {
+      const a=1+(i%4), b=2+(i%3);
+      full=[a,b];
+      for(let k=2;k<6;k++){full.push(full[k-1]+full[k-2]);}
+    }
+  }
+  const seq=full.slice(0,5);
+  const answer=full[5];
+  const spread=Math.max(2,Math.round(Math.abs(answer)*0.15)+1);
+  const distractors=uniqueDistractors(answer,3,spread);
+  const opts=shuffle([answer,...distractors]);
+  const answerIdx=opts.indexOf(answer);
+  return {kind:'series',seq,options:opts,answer:answerIdx};
+}
+
+/* ============ GENERATORS: FIGURAL PATTERN (FA) ============ */
+const FA_COLORS=['#2563eb','#dc2626','#16a34a','#d97706','#7c3aed'];
+function polygonPoints(sides,cx,cy,r,rotDeg){
+  rotDeg=rotDeg||0;
+  const pts=[];
+  for(let i=0;i<sides;i++){
+    const ang=(Math.PI*2*i/sides)-Math.PI/2+(rotDeg*Math.PI/180);
+    pts.push((cx+r*Math.cos(ang)).toFixed(1)+','+(cy+r*Math.sin(ang)).toFixed(1));
+  }
+  return pts.join(' ');
+}
+function shapeSVG(sides,color,size,rotDeg){
+  size=size||58;
+  const cx=size/2, cy=size/2, r=size/2-5;
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">'+
+    '<polygon points="'+polygonPoints(sides,cx,cy,r,rotDeg)+'" fill="'+color+'" stroke="#20242B" stroke-width="2"/></svg>';
+}
+function generateFA(i,level){
+  const startSides=3+(i%3);
+  const colorIdx=i%FA_COLORS.length;
+  const color=FA_COLORS[colorIdx];
+  if(level==='sma'){
+    const rotStep=13+(i%3)*9;
+    const seq=[0,1,2].map(k=>({sides:startSides+k,color,rot:k*rotStep}));
+    const correct={sides:startSides+3,color,rot:3*rotStep};
+    const wrongRot={sides:startSides+3,color,rot:2*rotStep};
+    const wrongSides={sides:startSides+2,color,rot:3*rotStep};
+    const wrongColor={sides:startSides+3,color:FA_COLORS[(colorIdx+1)%FA_COLORS.length],rot:3*rotStep};
+    const opts=shuffle([correct,wrongRot,wrongSides,wrongColor]);
+    const answer=opts.findIndex(o=>o.sides===correct.sides && o.rot===correct.rot && o.color===correct.color);
+    return {kind:'figural',seq,options:opts,answer};
+  }
+  const seq=[startSides,startSides+1,startSides+2].map(s=>({sides:s,color}));
+  const correct={sides:startSides+3,color};
+  const wrongProgress={sides:startSides+2,color};
+  const wrongPlus={sides:startSides+4,color};
+  const wrongColor={sides:startSides+3,color:FA_COLORS[(colorIdx+1)%FA_COLORS.length]};
+  const opts=shuffle([correct,wrongProgress,wrongPlus,wrongColor]);
+  const answer=opts.findIndex(o=>o.sides===correct.sides && o.color===correct.color);
+  return {kind:'figural',seq,options:opts,answer};
+}
+
+/* ============ GENERATORS: CUBE NET (WU) ============ */
+const CUBE_SYMBOLS=['★','●','▲','■','◆','✦','☀','♣','♥','☂','✈','☘'];
+const CUBE_POS=['Top','Left','Front','Right','Back','Bottom'];
+const CUBE_OPPOSITE={Top:'Bottom',Bottom:'Top',Left:'Right',Right:'Left',Front:'Back',Back:'Front'};
+const CUBE_BAND=['Left','Front','Right','Back'];
+function generateWU(){
+  const pool=shuffle([...CUBE_SYMBOLS]).slice(0,6);
+  const net={};
+  CUBE_POS.forEach((p,idx)=>net[p]=pool[idx]);
+  const target=CUBE_POS[Math.floor(Math.random()*CUBE_POS.length)];
+  const oppositeFace=CUBE_OPPOSITE[target];
+  const correct=net[oppositeFace];
+  const others=CUBE_POS.filter(p=>p!==target && p!==oppositeFace).map(p=>net[p]);
+  const distractors=shuffle(others).slice(0,3);
+  const opts=shuffle([correct,...distractors]);
+  const answer=opts.indexOf(correct);
+  const rot=Math.floor(Math.random()*4);
+  let band=CUBE_BAND.slice(rot).concat(CUBE_BAND.slice(0,rot));
+  if(Math.random()<0.5) band=band.slice().reverse();
+  const swapVertical=Math.random()<0.5;
+  const layout={
+    top: swapVertical?'Bottom':'Top',
+    bottom: swapVertical?'Top':'Bottom',
+    col1: band[0], col2: band[1], col3: band[2], col4: band[3]
+  };
+  return {kind:'cube',net,target,options:opts,answer,layout};
+}
+
+/* ============ MEMORY (ME) ============ */
+const ME_PAIRS_SMP=[
+["Buah","Alpukat"],["Kota","Semarang"],["Profesi","Nelayan"],["Hewan","Tenggiling"],
+["Warna","Magenta"],["Planet","Neptunus"],["Alat musik","Cello"],["Olahraga","Panahan"],
+["Negara","Mesir"],["Sungai","Musi"],["Gunung","Merbabu"],["Bunga","Anggrek"],
+["Logam","Titanium"],["Burung","Cendrawasih"],["Ikan","Tenggiri"],["Pulau","Lombok"],
+["Suku","Baduy"],["Rempah","Cengkeh"],["Kain","Songket"],["Candi","Prambanan"]
+];
+const ME_PAIRS_SMA=ME_PAIRS_SMP.concat([
+["Bahasa","Sanskerta"],["Peristiwa sejarah","Reformasi 1998"],["Cabang ilmu","Astronomi"],["Penemuan","Teleskop"]
+]);
+function generateMEQuestions(pairs){
+  return shuffle(pairs.map(([cat,item],idx)=>{
+    const otherCats=pairs.filter((p,j)=>j!==idx).map(p=>p[0]);
+    const distractors=shuffle(otherCats).slice(0,3);
+    const opts=shuffle([cat,...distractors]);
+    const answer=opts.indexOf(cat);
+    return {kind:'text',q:'"'+item+'" termasuk kelompok apa?',options:opts,answer};
+  }));
+}
+
+/* ============ MODUL: TES MINAT RIASEC ============ */
+const RIASEC_SCALE=['Tidak Suka','Kurang Suka','Suka','Sangat Suka'];
+const RIASEC_LABELS={R:'Realistic (Praktis/Teknik)',I:'Investigative (Analitis/Riset)',A:'Artistic (Kreatif/Seni)',S:'Social (Sosial/Membantu)',E:'Enterprising (Memimpin/Wirausaha)',C:'Conventional (Terorganisir/Administratif)'};
+const RIASEC_DESC={
+  R:'Suka pekerjaan praktis, teknis, dan melibatkan alat/mesin/kerja fisik.',
+  I:'Suka menganalisis, meneliti, dan memecahkan masalah secara ilmiah.',
+  A:'Suka berekspresi lewat seni, ide orisinal, dan cara-cara kreatif.',
+  S:'Suka membantu, mengajar, dan berinteraksi dengan orang lain.',
+  E:'Suka memimpin, memengaruhi orang lain, dan mengambil risiko usaha.',
+  C:'Suka pekerjaan yang terstruktur, rapi, dan berbasis data/prosedur.'
+};
+const RIASEC_ITEMS=[
+["R","Saya senang memperbaiki alat elektronik atau mesin yang rusak."],
+["R","Saya suka bekerja menggunakan tangan, seperti pertukangan atau otomotif."],
+["R","Saya tertarik pada kegiatan luar ruangan seperti berkebun atau bercocok tanam."],
+["R","Saya senang merakit atau membongkar suatu benda untuk mengetahui cara kerjanya."],
+["R","Saya lebih suka pekerjaan yang melibatkan aktivitas fisik daripada duduk di meja."],
+["R","Saya tertarik mempelajari cara kerja mesin, kendaraan, atau peralatan teknik."],
+["I","Saya suka memecahkan soal matematika atau teka-teki logika."],
+["I","Saya senang melakukan penelitian atau eksperimen untuk mencari jawaban."],
+["I","Saya tertarik mempelajari bagaimana sesuatu bekerja secara ilmiah."],
+["I","Saya suka membaca artikel sains atau menonton dokumenter ilmiah."],
+["I","Saya senang menganalisis data untuk menemukan pola atau kesimpulan."],
+["I","Saya tertarik pada bidang seperti biologi, kimia, fisika, atau teknologi."],
+["A","Saya suka menggambar, melukis, atau membuat karya seni visual."],
+["A","Saya senang menulis cerita, puisi, atau lirik lagu."],
+["A","Saya tertarik bermain musik atau menyanyi."],
+["A","Saya suka mengekspresikan ide melalui cara yang kreatif dan tidak baku."],
+["A","Saya senang mendesain sesuatu, seperti pakaian, poster, atau ruang."],
+["A","Saya lebih suka pekerjaan yang memberi kebebasan berekspresi."],
+["S","Saya senang membantu orang lain menyelesaikan masalah mereka."],
+["S","Saya suka mengajar atau menjelaskan sesuatu kepada orang lain."],
+["S","Saya tertarik bekerja dalam tim dan berdiskusi dengan banyak orang."],
+["S","Saya senang mendengarkan cerita teman dan memberi dukungan."],
+["S","Saya tertarik pada kegiatan sosial seperti relawan atau organisasi masyarakat."],
+["S","Saya suka bertemu orang baru dan menjalin hubungan pertemanan."],
+["E","Saya senang memimpin suatu kelompok atau proyek."],
+["E","Saya suka meyakinkan orang lain terhadap suatu ide atau pendapat."],
+["E","Saya tertarik memulai usaha atau bisnis sendiri."],
+["E","Saya senang mengambil keputusan penting dan bertanggung jawab atasnya."],
+["E","Saya suka bernegosiasi atau berdagang."],
+["E","Saya tertarik menjadi pemimpin organisasi atau ketua kegiatan."],
+["C","Saya suka menyusun data atau dokumen secara rapi dan terorganisir."],
+["C","Saya senang mengikuti prosedur dan aturan yang jelas."],
+["C","Saya tertarik bekerja dengan angka, catatan keuangan, atau administrasi."],
+["C","Saya suka membuat jadwal dan mematuhi rencana secara detail."],
+["C","Saya senang dengan pekerjaan yang terstruktur dengan langkah-langkah pasti."],
+["C","Saya tertarik pada bidang seperti akuntansi, kearsipan, atau data entry."]
+];
+function buildRiasecSection(){
+  const questions=shuffle(RIASEC_ITEMS).map(([category,q])=>({kind:'likert',q,category}));
+  return {id:'RIASEC',title:'Tes Minat RIASEC',code:'MINAT',module:'RIASEC',scoring:'category',
+    scaleLabels:RIASEC_SCALE,
+    desc:'Mengukur kecenderungan minat karier berdasarkan model Holland (RIASEC).',
+    instruction:'Nyatakan seberapa suka Anda terhadap tiap pernyataan berikut. Tidak ada jawaban benar atau salah — jawab sesuai minat Anda yang sebenarnya.',
+    example:{q:'Contoh: "Saya senang berdiskusi dengan banyak orang."',options:RIASEC_SCALE,answer:2},
+    duration:600,
+    questions};
+}
+
+/* ============ MODUL: TES GAYA BELAJAR (VAK) ============ */
+const GAYA_SCALE=['Tidak Sesuai','Kurang Sesuai','Sesuai','Sangat Sesuai'];
+const GAYA_LABELS={V:'Visual',A:'Auditori',K:'Kinestetik'};
+const GAYA_DESC={
+  V:'Belajar paling efektif lewat gambar, warna, diagram, dan materi tertulis/visual.',
+  A:'Belajar paling efektif lewat mendengarkan penjelasan, diskusi, dan suara.',
+  K:'Belajar paling efektif lewat praktik langsung, gerakan, dan pengalaman fisik.'
+};
+const GAYA_ITEMS=[
+["V","Saya lebih mudah memahami materi melalui gambar, diagram, atau grafik."],
+["V","Saya suka membuat catatan dengan warna-warni atau highlight."],
+["V","Saya lebih ingat wajah orang daripada namanya."],
+["V","Saya suka membaca buku atau materi tertulis untuk belajar."],
+["V","Saya mudah terganggu oleh keramaian visual saat belajar."],
+["V","Saya suka menonton video pembelajaran dibanding mendengarkan penjelasan lisan."],
+["V","Saya sering membayangkan sesuatu dalam bentuk gambar saat berpikir."],
+["V","Saya lebih suka petunjuk tertulis daripada instruksi lisan."],
+["A","Saya lebih mudah memahami materi dengan mendengarkan penjelasan guru."],
+["A","Saya suka belajar sambil mendengarkan musik atau rekaman suara."],
+["A","Saya lebih ingat sesuatu setelah membicarakannya dengan orang lain."],
+["A","Saya suka berdiskusi untuk memahami suatu topik."],
+["A","Saya mudah terganggu oleh suara bising saat belajar."],
+["A","Saya suka membaca dengan bersuara atau melafalkan materi."],
+["A","Saya lebih ingat nama orang daripada wajahnya."],
+["A","Saya suka mendengarkan podcast atau audiobook untuk belajar."],
+["K","Saya lebih mudah memahami materi dengan praktik langsung."],
+["K","Saya suka belajar sambil bergerak, seperti berjalan-jalan."],
+["K","Saya sulit duduk diam dalam waktu lama saat belajar."],
+["K","Saya lebih ingat sesuatu setelah mempraktikkannya sendiri."],
+["K","Saya suka menggunakan gerakan tangan saat menjelaskan sesuatu."],
+["K","Saya lebih suka kegiatan belajar yang melibatkan eksperimen atau simulasi."],
+["K","Saya sering menyentuh atau memegang benda saat mempelajarinya."],
+["K","Saya lebih cepat lelah belajar dengan hanya duduk mendengarkan/membaca."]
+];
+function buildGayaSection(){
+  const questions=shuffle(GAYA_ITEMS).map(([category,q])=>({kind:'likert',q,category}));
+  return {id:'GAYA',title:'Tes Gaya Belajar',code:'GAYA',module:'GAYA',scoring:'category',
+    scaleLabels:GAYA_SCALE,
+    desc:'Mengukur kecenderungan gaya belajar Visual, Auditori, atau Kinestetik (VAK).',
+    instruction:'Nyatakan seberapa sesuai tiap pernyataan berikut dengan cara Anda belajar sehari-hari.',
+    example:{q:'Contoh: "Saya lebih mudah memahami materi lewat gambar."',options:GAYA_SCALE,answer:2},
+    duration:480,
+    questions};
+}
+
+/* ============ MODUL: TES BAKAT DIFERENSIAL (REKOMENDASI MAPEL PILIHAN) ============ */
+const BAKAT_LABELS={
+  MIPA:'Matematika & Sains (MIPA)',
+  IPS:'Ilmu Pengetahuan Sosial (IPS)',
+  BHS:'Bahasa & Sastra',
+  INF:'Informatika & Logika Komputasi',
+  VOK:'Vokasi & Keterampilan Teknis'
+};
+const BAKAT_DESC_SMA={
+  MIPA:'Kuat di penalaran matematis & sains. Mapel pilihan yang relevan: Matematika Tingkat Lanjut, Fisika, Kimia, Biologi.',
+  IPS:'Kuat di pemahaman fenomena sosial-ekonomi. Mapel pilihan yang relevan: Sosiologi, Ekonomi, Geografi, Antropologi.',
+  BHS:'Kuat di bahasa & sastra. Mapel pilihan yang relevan: Bahasa Inggris Tingkat Lanjut, Bahasa/Sastra Indonesia Tingkat Lanjut, Bahasa asing pilihan.',
+  INF:'Kuat di logika komputasional. Mapel pilihan yang relevan: Informatika.',
+  VOK:'Kuat di keterampilan teknis-praktis. Mapel pilihan yang relevan: mata pelajaran Vokasi/Prakarya sesuai bidang keahlian.'
+};
+// SMP belum ada konsep "mapel pilihan" (itu konsep Kurikulum Merdeka jenjang SMA/SNBP), jadi
+// framing-nya diarahkan ke pengembangan bakat lewat kegiatan yang relevan, bukan pemilihan mapel.
+const BAKAT_DESC_SMP={
+  MIPA:'Kuat di penalaran matematis & sains. Arahkan bakat ini lewat: klub sains/matematika, olimpiade MIPA, eksperimen sains, atau ekstrakurikuler robotik.',
+  IPS:'Kuat di pemahaman fenomena sosial-ekonomi. Arahkan bakat ini lewat: debat, jurnalistik sekolah/mading, OSIS/organisasi siswa, atau kegiatan sosial kemasyarakatan.',
+  BHS:'Kuat di bahasa & sastra. Arahkan bakat ini lewat: klub menulis, lomba pidato/debat bahasa, mading sekolah, atau kursus bahasa asing.',
+  INF:'Kuat di logika komputasional. Arahkan bakat ini lewat: klub coding/robotik, kompetisi informatika, atau belajar pemrograman dasar.',
+  VOK:'Kuat di keterampilan teknis-praktis. Arahkan bakat ini lewat: ekstrakurikuler keterampilan/prakarya, kursus keterampilan teknis, atau kegiatan vokasi tingkat dasar.'
+};
+const BAKAT_RAW=[
+["MIPA","Jika sebuah benda jatuh bebas, kecepatannya akan ... seiring waktu.",["Tetap","Berkurang","Bertambah","Acak"],2],
+["MIPA","8 : 4 = 16 : ?",["6","8","10","12"],1],
+["MIPA","Jika air dipanaskan hingga 100°C pada tekanan normal, air akan ....",["Membeku","Menguap","Memadat","Tidak berubah"],1],
+["MIPA","Suatu pola: 1, 1, 2, 3, 5, 8, ... angka berikutnya?",["11","12","13","14"],2],
+["MIPA","Logam yang dipanaskan cenderung ....",["Menyusut","Memuai","Tetap","Berubah warna saja"],1],
+["MIPA","Jika 3 apel + 2 apel = 5 apel, maka 3x + 2x = ?",["5","5x","x⁵","6x"],1],
+["MIPA","Manakah yang termasuk sumber energi terbarukan?",["Batu bara","Minyak bumi","Matahari","Gas alam"],2],
+["MIPA","Segitiga memiliki total sudut ....",["90°","180°","270°","360°"],1],
+["MIPA","Proses tumbuhan membuat makanan sendiri disebut ....",["Respirasi","Fotosintesis","Transpirasi","Fermentasi"],1],
+["MIPA","Jika kecepatan tetap dan jarak bertambah, maka waktu tempuh akan ....",["Berkurang","Bertambah","Tetap","Tidak berhubungan"],1],
+
+["IPS","Kegiatan jual-beli yang memengaruhi harga di pasar mengikuti hukum ....",["Gravitasi","Permintaan-penawaran","Kekekalan energi","Relativitas"],1],
+["IPS","Perpindahan penduduk dari desa ke kota disebut ....",["Urbanisasi","Migrasi internasional","Transmigrasi","Reboisasi"],0],
+["IPS","Lembaga yang mengatur hubungan antarnegara disebut ....",["PBB","OSIS","MPR","BUMN"],0],
+["IPS","Sistem ekonomi yang mengandalkan mekanisme pasar disebut ....",["Sosialis","Kapitalis","Tradisional","Barter"],1],
+["IPS","Konflik yang terjadi karena perbedaan pandangan dalam masyarakat disebut konflik ....",["Sosial","Fisik","Alam","Teknis"],0],
+["IPS","Peta yang menunjukkan persebaran penduduk disebut peta ....",["Topografi","Demografi","Geologi","Klimatologi"],1],
+["IPS","Sikap saling menghormati antarbudaya disebut ....",["Etnosentrisme","Toleransi","Diskriminasi","Individualisme"],1],
+["IPS","Faktor yang memengaruhi inflasi antara lain ....",["Jumlah uang beredar","Suhu udara","Jumlah hewan","Curah hujan"],0],
+["IPS","Pembagian kerja dalam masyarakat berdasarkan keahlian disebut ....",["Stratifikasi","Spesialisasi","Mobilisasi","Urbanisasi"],1],
+["IPS","Bentuk kerja sama ekonomi antarnegara ASEAN disebut ....",["AFTA","NATO","Uni Eropa","G7"],0],
+
+["BHS","Sinonim dari kata \"cerdas\" adalah ....",["Bodoh","Pandai","Malas","Lambat"],1],
+["BHS","Antonim dari kata \"gembira\" adalah ....",["Senang","Bahagia","Sedih","Riang"],2],
+["BHS","Kalimat yang menggunakan majas adalah ....",["Dia makan nasi","Hatinya sekeras batu","Ibu pergi ke pasar","Buku itu tebal"],1],
+["BHS","\"Meskipun hujan deras, ia tetap berangkat sekolah.\" Kata \"meskipun\" menunjukkan hubungan ....",["Sebab-akibat","Pertentangan","Tujuan","Waktu"],1],
+["BHS","Karya sastra berbentuk naratif panjang disebut ....",["Puisi","Novel","Pantun","Sajak"],1],
+["BHS","Kata baku dari \"gimana\" adalah ....",["Bagaimana","Begini","Begitu","Kayak gitu"],0],
+["BHS","Paragraf yang bertujuan meyakinkan pembaca disebut paragraf ....",["Narasi","Deskripsi","Argumentasi","Eksposisi"],2],
+["BHS","Ungkapan \"buah tangan\" berarti ....",["Buah asli","Oleh-oleh","Tangan kanan","Hasil kerja"],1],
+["BHS","Fungsi tanda titik dua (:) dalam kalimat adalah ....",["Mengakhiri kalimat","Memisahkan rincian","Menyatakan pertanyaan","Menyatakan seruan"],1],
+["BHS","Kalimat efektif adalah kalimat yang ....",["Panjang dan rumit","Jelas dan tidak ambigu","Menggunakan banyak istilah asing","Diulang-ulang"],1],
+
+["INF","Jika A benar dan B salah, maka \"A DAN B\" bernilai ....",["Benar","Salah","Tidak tentu","Keduanya"],1],
+["INF","Urutan langkah sistematis untuk menyelesaikan masalah disebut ....",["Database","Algoritma","Interface","Firewall"],1],
+["INF","Bilangan biner 101 setara dengan desimal ....",["3","4","5","6"],2],
+["INF","Pola: input 2 → output 4; input 3 → output 9. Aturannya adalah ....",["x+2","x²","2x","x-1"],1],
+["INF","Perangkat yang menyimpan data secara permanen adalah ....",["RAM","Harddisk","Cache","Monitor"],1],
+["INF","Jika X = 5 dan Y = X+3, maka nilai Y adalah ....",["5","8","3","15"],1],
+["INF","Struktur perulangan dalam pemrograman disebut ....",["Sequence","Loop","Variabel","Fungsi"],1],
+["INF","Simbol yang biasa mewakili \"keputusan\" dalam flowchart berbentuk ....",["Persegi","Lingkaran","Belah ketupat","Segitiga"],2],
+["INF","Manakah yang BUKAN bahasa pemrograman?",["Python","HTML murni","Java","C++"],1],
+["INF","Jika kondisi \"benar\", program menjalankan perintah di dalam blok ....",["Else","If","Print","Exit"],1],
+
+["VOK","Alat yang digunakan untuk mengukur panjang secara presisi adalah ....",["Jangka sorong","Termometer","Barometer","Amperemeter"],0],
+["VOK","Jika roda gigi kecil berputar cepat menggerakkan roda gigi besar, roda besar akan berputar ....",["Lebih cepat","Lebih lambat","Sama cepat","Berhenti"],1],
+["VOK","Bahan yang bersifat konduktor listrik adalah ....",["Kayu","Plastik","Tembaga","Karet"],2],
+["VOK","Fungsi utama sekring pada instalasi listrik adalah ....",["Menambah daya","Mengamankan dari korsleting","Menghemat listrik","Mempercepat arus"],1],
+["VOK","Dalam menjahit, alat yang digunakan untuk mengukur pola adalah ....",["Gunting","Pita ukur","Jarum","Benang"],1],
+["VOK","Proses mengubah bentuk logam dengan panas disebut ....",["Pengelasan","Penempaan","Pengecatan","Pelapisan"],1],
+["VOK","Jika dua gaya bekerja berlawanan arah dengan besar sama, benda akan ....",["Bergerak cepat","Diam/seimbang","Berputar","Hancur"],1],
+["VOK","Alat pelindung diri (APD) wajib dipakai saat kerja bengkel untuk ....",["Bergaya","Keselamatan kerja","Formalitas","Tidak penting"],1],
+["VOK","Sistem yang mengatur aliran air ke seluruh bangunan disebut instalasi ....",["Elektrikal","Plambing","Mekanikal","Struktural"],1],
+["VOK","Kayu yang telah dikeringkan bertujuan agar ....",["Lebih berat","Tidak mudah menyusut/melengkung","Berubah warna","Lebih murah"],1]
+];
+function buildBakatSection(){
+  const questions=shuffle(BAKAT_RAW.map(([category,q,options,answer])=>{
+    const mc=shuffledMC(q,options,answer);
+    mc.category=category;
+    return mc;
+  }));
+  return {id:'BAKAT',title:'Tes Bakat Diferensial',code:'BAKAT',module:'BAKAT',scoring:'aptitude',
+    desc:'Mengukur kecenderungan bakat di 5 rumpun untuk merekomendasikan mata pelajaran pilihan Kurikulum Merdeka.',
+    instruction:'Kerjakan tiap soal sebaik mungkin — ini tes kemampuan (ada jawaban benar), bukan tes minat.',
+    example:{q:'Contoh: Sinonim dari kata "besar" adalah ....',options:['Kecil','Raksasa','Sempit','Pendek'],answer:1},
+    duration:900,
+    questions};
+}
+
+/* ============ BUILD SECTIONS ============ */
+const DURATIONS={
+  smp:{SE:360,WA:360,AN:420,GE:480,RA:600,ZR:600,FA:420,WU:540,MEMORIZE:180,ME:360},
+  sma:{SE:360,WA:360,AN:420,GE:480,RA:720,ZR:660,FA:360,WU:480,MEMORIZE:150,ME:330}
+};
+function buildSections(level,modules){
+  modules=modules||{IST:true,RIASEC:false,GAYA:false};
+  const D=DURATIONS[level]||DURATIONS.smp;
+  const seSrc = level==='sma' ? SMA_SE_RAW : SE_RAW;
+  const waSrc = level==='sma' ? SMA_WA_RAW : WA_RAW;
+  const anSrc = level==='sma' ? SMA_AN_RAW : AN_RAW;
+  const geSrc = level==='sma' ? SMA_GE_RAW : GE_RAW;
+  const raSrc = level==='sma' ? SMA_RA_RAW : RA_RAW;
+  const mePairs = level==='sma' ? ME_PAIRS_SMA : ME_PAIRS_SMP;
+  const istSections=[
+    {id:'SE',title:'Melengkapi Kalimat',code:'SE',module:'IST',scoring:'correct',
+     desc:'Menguji penalaran verbal dan pemahaman bahasa.',
+     instruction:'Pilih satu kata/frasa yang paling tepat untuk melengkapi setiap kalimat.',
+     example:{q:'Contoh: Matahari terbit di sebelah ....',options:['Utara','Timur','Selatan','Barat'],answer:1},
+     duration:D.SE,
+     questions:seSrc.map(([q,options,answer])=>shuffledMC(q,options,answer))},
+    {id:'WA',title:'Pemilihan Kata',code:'WA',module:'IST',scoring:'correct',
+     desc:'Menguji kemampuan abstraksi verbal.',
+     instruction:'Pilih satu kata yang paling berbeda / tidak sekelompok dengan yang lain.',
+     example:{q:'Contoh:',options:['Kucing','Anjing','Kursi','Ayam'],answer:2},
+     duration:D.WA,
+     questions:waSrc.map(([options,answer])=>shuffledMC('Manakah yang tidak sekelompok?',options,answer))},
+    {id:'AN',title:'Analogi Verbal',code:'AN',module:'IST',scoring:'correct',
+     desc:'Menguji penalaran analogis.',
+     instruction:'Lengkapi hubungan kata: A : B = C : ?',
+     example:{q:'Contoh: Api : Panas = Es : ?',options:['Keras','Dingin','Cair','Berat'],answer:1},
+     duration:D.AN,
+     questions:anSrc.map(([a,b,c,options,answer])=>shuffledMC(a+' : '+b+' = '+c+' : ?',options,answer))},
+    {id:'GE',title:'Persamaan Kata',code:'GE',module:'IST',scoring:'correct',
+     desc:'Menguji kemampuan generalisasi/klasifikasi konsep.',
+     instruction:'Pilih jawaban yang paling tepat menjelaskan persamaan dua kata berikut.',
+     example:{q:'Contoh: Apa persamaan "Kereta api" dan "Pesawat"?',options:['Buah','Alat transportasi','Hewan','Pakaian'],answer:1},
+     duration:D.GE,
+     questions:geSrc.map(([a,b,options,answer])=>shuffledMC('Apa persamaan "'+a+'" dan "'+b+'"?',options,answer))},
+    {id:'RA',title:'Soal Hitungan',code:'RA',module:'IST',scoring:'correct',
+     desc:'Menguji penalaran numerik praktis.',
+     instruction:'Selesaikan setiap soal cerita berikut, lalu pilih jawaban yang benar.',
+     example:{q:'Contoh: Jika 2 kg gula harganya Rp30.000, berapa harga 5 kg?',options:['Rp60.000','Rp70.000','Rp75.000','Rp80.000'],answer:2},
+     duration:D.RA,
+     questions:raSrc.map(([q,options,answer])=>shuffledMC(q,options,answer))},
+    {id:'ZR',title:'Deret Angka',code:'ZR',module:'IST',scoring:'correct',
+     desc:'Menguji penalaran logis-numerik.',
+     instruction:'Temukan pola pada deret angka, lalu pilih angka selanjutnya.',
+     example:{q:'Contoh: 2, 4, 8, 16, 32, ?',options:['48','64','56','60'],answer:1},
+     duration:D.ZR,
+     questions:Array.from({length:20},(_,i)=>generateZR(i,level))},
+    {id:'FA',title:'Pemilihan Gambar',code:'FA',module:'IST',scoring:'correct',
+     desc:'Menguji penalaran figural/pola visual.',
+     instruction: level==='sma' ?
+       'Perhatikan pola perubahan bentuk pada 3 gambar pertama (jumlah sisi & rotasi), lalu pilih gambar keempat yang melanjutkan pola tersebut.' :
+       'Perhatikan pola perubahan bentuk pada 3 gambar pertama, lalu pilih gambar keempat yang melanjutkan pola tersebut (jumlah sisi & warna).',
+     example:null,
+     duration:D.FA,
+     questions:Array.from({length:20},(_,i)=>generateFA(i,level))},
+    {id:'WU',title:'Tugas Kubus (Jaring-Jaring)',code:'WU',module:'IST',scoring:'correct',
+     desc:'Menguji visualisasi ruang / rotasi mental.',
+     instruction:'Sebuah jaring-jaring kubus ditampilkan. Bila dilipat menjadi kubus, tentukan simbol yang berada pada sisi yang berhadapan (berlawanan) dengan sisi yang ditandai kotak biru.',
+     example:null,
+     duration:D.WU,
+     questions:Array.from({length:20},()=>generateWU())},
+    {id:'ME',title:'Tugas Ingatan',code:'ME',module:'IST',scoring:'correct',
+     desc:'Menguji daya ingat jangka pendek.',
+     instruction:'Hafalkan pasangan kelompok–item berikut selama waktu yang diberikan. Setelah waktu habis, Anda akan diuji tanpa melihat daftar lagi.',
+     example:null,
+     isMemory:true,
+     memorizeDuration:D.MEMORIZE,
+     duration:D.ME,
+     pairs:mePairs,
+     questions:generateMEQuestions(mePairs)}
+  ];
+  let result=[];
+  if(modules.IST) result=result.concat(istSections);
+  if(modules.RIASEC) result.push(buildRiasecSection());
+  if(modules.GAYA) result.push(buildGayaSection());
+  if(modules.BAKAT) result.push(buildBakatSection());
+  return result;
+}
+
+/* ============ APP STATE ============ */
+const app=document.getElementById('app');
+let sections=[];
+let curIdx=-1;
+let phase='welcome';
+let secondsLeft=0;
+let timerHandle=null;
+let userAnswers={};
+let sectionScores={};
+let selectedLevel='sma';
+let currentLevel='sma';
+let selectedModules={IST:true,RIASEC:true,GAYA:true,BAKAT:true};
+
+/* Level dikunci lewat parameter URL (?level=smp / ?level=sma), dibagikan panitia
+   per kelompok kelas, agar siswa tidak perlu (dan tidak bisa) salah pilih jenjang. */
+const _urlLevelParam=new URLSearchParams(window.location.search).get('level');
+const lockedLevel=(_urlLevelParam==='smp'||_urlLevelParam==='sma') ? _urlLevelParam : null;
+if(lockedLevel) selectedLevel=lockedLevel;
+
+let cheatCount=0;
+let cheatLog=[];
+let antiCheatArmed=false;
+let violationCooldown=false;
+let phaseBeforeLock=null;
+
+/* ============ PENYIMPANAN SESI (agar tahan refresh tidak sengaja) ============ */
+function saveSession(){
+  if(phase==='welcome' || phase==='final' || phase==='resumePrompt') return;
+  try{
+    const snapshot={
+      sections, curIdx, phase, secondsLeft,
+      userAnswers, sectionScores,
+      studentName, studentSchool, studentClass, studentNIS,
+      currentLevel, selectedModules,
+      cheatCount, cheatLog, phaseBeforeLock, isLocked,
+      savedAt:Date.now()
+    };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(snapshot));
+  }catch(e){ /* localStorage penuh/tidak tersedia — abaikan diam-diam */ }
+}
+function loadSavedSession(){
+  try{
+    const raw=localStorage.getItem(SESSION_KEY);
+    if(!raw) return null;
+    const data=JSON.parse(raw);
+    if(!data || !data.savedAt || (Date.now()-data.savedAt)>SESSION_MAX_AGE_MS) { localStorage.removeItem(SESSION_KEY); return null; }
+    if(!data.sections || !data.sections.length) return null;
+    return data;
+  }catch(e){ return null; }
+}
+function clearSession(){
+  try{ localStorage.removeItem(SESSION_KEY); }catch(e){}
+}
+
+function resumeSession(data){
+  sections=data.sections;
+  curIdx=data.curIdx;
+  userAnswers=data.userAnswers;
+  sectionScores=data.sectionScores;
+  studentName=data.studentName;
+  studentSchool=data.studentSchool;
+  studentClass=data.studentClass;
+  studentNIS=data.studentNIS||'';
+  currentLevel=data.currentLevel;
+  selectedModules=data.selectedModules;
+  cheatCount=data.cheatCount||0;
+  cheatLog=data.cheatLog||[];
+  phaseBeforeLock=data.phaseBeforeLock;
+  isLocked=!!data.isLocked;
+
+  const elapsedSec=Math.floor((Date.now()-data.savedAt)/1000);
+  secondsLeft=Math.max(0, data.secondsLeft-elapsedSec);
+
+  if(data.phase==='locked'){
+    phase='locked';
+    render();
+    startHeartbeat(); // tetap lanjutkan heartbeat walau lagi terkunci, supaya panitia tetap lihat statusnya
+  } else if(data.phase==='memorize' || data.phase==='test'){
+    phase=data.phase;
+    armAntiCheat();
+    requestFS();
+    if(secondsLeft<=0){
+      /* waktu sudah habis selagi halaman tertutup/refresh */
+      render();
+      if(data.phase==='memorize'){ startTest(); } else { finishSection(true); }
+    } else {
+      render();
+      if(data.phase==='memorize'){ startMemorizeTimer(); } else { startTestTimer(); }
+    }
+    startHeartbeat(); // BUG SEBELUMNYA: resumeSession() lupa restart heartbeat setelah reload/resume
+  } else {
+    /* intro */
+    phase='intro';
+    render();
+  }
+}
+
+function totalMinutes(){
+  let s=0;
+  sections.forEach(sec=>{ s+= (sec.memorizeDuration||0)+sec.duration; });
+  return Math.round(s/60);
+}
+function totalQuestions(){
+  return sections.reduce((a,s)=>a+s.questions.length,0);
+}
+function previewInfo(level,modules){
+  const s=buildSections(level,modules);
+  const q=s.reduce((a,x)=>a+x.questions.length,0);
+  const m=Math.round(s.reduce((a,x)=>a+(x.memorizeDuration||0)+x.duration,0)/60);
+  return {q,m,count:s.length};
+}
+
+function progressDots(){
+  let html='<div class="dots">';
+  sections.forEach((s,i)=>{
+    let cls='dot';
+    if(i<curIdx) cls+=' done';
+    if(i===curIdx) cls+=' current';
+    html+='<div class="'+cls+'" title="'+s.code+'"></div>';
+  });
+  html+='</div>';
+  return html;
+}
+
+/* ============ ANTI-CURANG ============ */
+let armGraceUntil=0;
+function armAntiCheat(){
+  antiCheatArmed=true;
+  armGraceUntil=Date.now()+2500; /* abaikan pelanggaran sesaat setelah mulai/lanjut (transisi layar, fullscreen, dsb) */
+  document.body.classList.add('no-select');
+}
+function disarmAntiCheat(){
+  antiCheatArmed=false;
+  document.body.classList.remove('no-select');
+}
+function isActiveTestPhase(){
+  return antiCheatArmed && Date.now()>=armGraceUntil && (phase==='test' || phase==='memorize');
+}
+function playAlertSound(){
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const now=ctx.currentTime;
+    [0,0.35,0.7].forEach(offset=>{
+      const osc=ctx.createOscillator();
+      const gain=ctx.createGain();
+      osc.type='square';
+      osc.frequency.setValueAtTime(1200,now+offset);
+      gain.gain.setValueAtTime(0.0001,now+offset);
+      gain.gain.exponentialRampToValueAtTime(1,now+offset+0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001,now+offset+0.28);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(now+offset); osc.stop(now+offset+0.3);
+    });
+  }catch(e){ /* Web Audio tidak tersedia */ }
+  if(navigator.vibrate){ navigator.vibrate([250,100,250,100,500]); }
+}
+function requestFS(){
+  const el=document.documentElement;
+  const req=el.requestFullscreen||el.webkitRequestFullscreen||el.msRequestFullscreen;
+  if(req){ req.call(el).catch(()=>{}); }
+}
+function isFullscreen(){
+  return !!(document.fullscreenElement||document.webkitFullscreenElement);
+}
+function registerViolation(reason){
+  if(!isActiveTestPhase()) return;
+  if(isLocked) return;
+  if(violationCooldown) return;
+  violationCooldown=true;
+  setTimeout(()=>{violationCooldown=false;},1500);
+
+  cheatCount++;
+  cheatLog.push(reason+' — '+new Date().toLocaleTimeString('id-ID'));
+  playAlertSound();
+  saveSession();
+
+  if(cheatHandle) clearTimeout(cheatHandle);
+  const overlay=document.createElement('div');
+  overlay.className='violation-overlay';
+  overlay.id='violationOverlay';
+  overlay.innerHTML='<div style="font-size:3rem;">⚠️</div>'+
+    '<h2 style="color:#fff;margin:0;">Pelanggaran Terdeteksi!</h2>'+
+    '<p style="font-size:1.05rem;">'+reason+'</p>'+
+    '<p style="font-size:1.3rem;font-weight:700;">Pelanggaran ke-'+cheatCount+' dari '+MAX_VIOLATIONS+'</p>'+
+    (cheatCount<MAX_VIOLATIONS ? '<p>Tes akan otomatis terkunci jika pelanggaran mencapai '+MAX_VIOLATIONS+' kali.</p>' : '');
+  document.body.appendChild(overlay);
+  cheatHandle=setTimeout(()=>{
+    overlay.remove();
+    if(cheatCount>=MAX_VIOLATIONS){ lockTest(); }
+  },2800);
+}
+let cheatHandle=null;
+let isLocked=false;
+
+function scoreCurrentSectionIfInProgress(){
+  const s=sections[curIdx];
+  if(!s || !userAnswers[s.id]) return;
+  const arr=userAnswers[s.id];
+  if(s.scoring==='category'){
+    const byCategory={};
+    s.questions.forEach((q,idx)=>{
+      const val=(arr[idx]!==null && arr[idx]!==undefined) ? arr[idx]+1 : 0;
+      if(!byCategory[q.category]) byCategory[q.category]={sum:0,count:0};
+      byCategory[q.category].sum+=val; byCategory[q.category].count+=1;
+    });
+    sectionScores[s.id]={byCategory};
+  } else if(s.scoring==='aptitude'){
+    const byCategory={};
+    let correct=0;
+    s.questions.forEach((q,idx)=>{
+      const isCorrect=arr[idx]===q.answer;
+      if(isCorrect) correct++;
+      if(!byCategory[q.category]) byCategory[q.category]={correct:0,count:0};
+      byCategory[q.category].count+=1;
+      if(isCorrect) byCategory[q.category].correct+=1;
+    });
+    sectionScores[s.id]={byCategory,correct};
+  } else {
+    let correct=0;
+    s.questions.forEach((q,idx)=>{ if(arr[idx]===q.answer) correct++; });
+    sectionScores[s.id]=correct;
+  }
+}
+
+function lockTest(){
+  isLocked=true;
+  disarmAntiCheat();
+  clearInterval(timerHandle);
+  phaseBeforeLock=phase;
+  scoreCurrentSectionIfInProgress();
+  sendViolationNote();
+  phase='locked';
+  saveSession();
+  render();
+}
+
+function sendViolationNote(){
+  if(!GAS_URL || GAS_URL.indexOf('PASTE_URL')===0){
+    console.warn('GAS_URL belum dikonfigurasi — catatan pelanggaran tidak dikirim.');
+    return;
+  }
+  const note={
+    nama:studentName,
+    sekolah:studentSchool,
+    kelas:studentClass,
+    nis:studentNIS,
+    status:'PELANGGARAN',
+    catatan:'Melakukan pelanggaran sebanyak '+cheatCount+' kali (batas maksimal '+MAX_VIOLATIONS+'x)',
+    cheatCount,
+    cheatLog:cheatLog.join(' | '),
+    bankVersion:ITEM_BANK_VERSION
+  };
+  fetch(GAS_URL,{method:'POST',body:JSON.stringify(note)}).catch(err=>{
+    console.error('Gagal mengirim catatan pelanggaran ke Google Sheets:', err);
+  });
+}
+
+function renderLocked(){
+  app.innerHTML=
+  '<div class="lock-screen"><div class="lock-card">'+
+    '<div style="font-size:3rem;">🔒</div>'+
+    '<h2 style="color:#fff;">Tes Terkunci</h2>'+
+    '<p class="muted" style="color:#B9C0C7;">Terdeteksi '+cheatCount+' pelanggaran selama tes berlangsung (batas maksimal '+MAX_VIOLATIONS+'x). Sebuah catatan pelanggaran telah dikirim ke panitia. Hubungi pengawas untuk membuka kembali dan melanjutkan tes.</p>'+
+    '<input id="pinInput" type="password" inputmode="numeric" placeholder="Masukkan PIN Pengawas">'+
+    '<p id="pinError" style="color:#E08A7D;font-size:0.85rem;min-height:18px;margin:4px 0 0;"></p>'+
+    '<button class="btn block" onclick="attemptUnlock()">Buka Kunci & Lanjutkan Tes</button>'+
+    '<div class="violation-log">'+cheatLog.map(l=>'<div>• '+l+'</div>').join('')+'</div>'+
+  '</div></div>';
+}
+
+function attemptUnlock(){
+  const val=document.getElementById('pinInput').value;
+  if(val===SUPERVISOR_PIN){
+    isLocked=false;
+    cheatCount=0;
+    armAntiCheat();
+    requestFS();
+    if(phaseBeforeLock==='memorize'){
+      phase='memorize';
+      render();
+      saveSession();
+      startMemorizeTimer();
+    } else {
+      phase='test';
+      render();
+      saveSession();
+      startTestTimer();
+    }
+  } else {
+    const err=document.getElementById('pinError');
+    if(err) err.textContent='PIN salah. Coba lagi atau hubungi pengawas.';
+  }
+}
+
+let hiddenTimer=null;
+const HIDDEN_GRACE_MS=4000; /* layar tersembunyi sebentar (mis. layar mati/notifikasi) tidak dihitung; baru pelanggaran jika lebih lama dari ini */
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){
+    if(hiddenTimer) clearTimeout(hiddenTimer);
+    hiddenTimer=setTimeout(()=>{
+      if(document.hidden){ registerViolation('Berpindah tab / aplikasi lain dalam waktu cukup lama'); }
+    },HIDDEN_GRACE_MS);
+  } else {
+    if(hiddenTimer){ clearTimeout(hiddenTimer); hiddenTimer=null; }
+  }
+});
+document.addEventListener('fullscreenchange',()=>{
+  if(isActiveTestPhase() && !isFullscreen()){ registerViolation('Keluar dari mode layar penuh'); }
+});
+document.addEventListener('webkitfullscreenchange',()=>{
+  if(isActiveTestPhase() && !isFullscreen()){ registerViolation('Keluar dari mode layar penuh'); }
+});
+document.addEventListener('contextmenu',(e)=>{
+  if(isActiveTestPhase()){ e.preventDefault(); }
+});
+document.addEventListener('selectstart',(e)=>{
+  if(antiCheatArmed && (phase==='test'||phase==='memorize')){ e.preventDefault(); }
+});
+document.addEventListener('copy',(e)=>{
+  if(antiCheatArmed && (phase==='test'||phase==='memorize')){ e.preventDefault(); }
+});
+window.addEventListener('beforeunload',(e)=>{
+  if(isActiveTestPhase()){ e.preventDefault(); e.returnValue=''; }
+});
+
+function render(){
+  if(phase==='welcome') return renderWelcome();
+  if(phase==='resumePrompt') return renderResumePrompt();
+  if(phase==='intro') return renderIntro();
+  if(phase==='memorize') return renderMemorize();
+  if(phase==='test') return renderTest();
+  if(phase==='locked') return renderLocked();
+  if(phase==='final') return renderFinal();
+}
+
+let pendingResume=null;
+
+function renderResumePrompt(){
+  const d=pendingResume;
+  const nama=d.studentName||'-';
+  app.innerHTML=
+  '<div class="wrap">'+
+    '<div class="card center" style="margin-top:40px;">'+
+      '<div class="badge">↺</div>'+
+      '<h2>Sesi Tes Sebelumnya Ditemukan</h2>'+
+      '<p class="muted">Sepertinya halaman sempat ter-refresh atau tertutup. Progres tes atas nama <strong>'+nama+'</strong> masih tersimpan.</p>'+
+      '<button class="btn block" style="margin-top:14px;" onclick="continueResumedSession()">Lanjutkan Tes</button>'+
+      '<button class="btn block secondary" style="margin-top:10px;" onclick="discardResumedSession()">Mulai dari Awal (Hapus Progres)</button>'+
+    '</div>'+
+  '</div>';
+}
+
+function continueResumedSession(){
+  const d=pendingResume;
+  pendingResume=null;
+  resumeSession(d);
+}
+
+function discardResumedSession(){
+  pendingResume=null;
+  clearSession();
+  phase='welcome';
+  render();
+}
+
+function renderWelcome(){
+  const info=previewInfo(selectedLevel,selectedModules);
+  const anySelected=selectedModules.IST||selectedModules.RIASEC||selectedModules.GAYA||selectedModules.BAKAT;
+  const modBtn=(key,label,desc)=>
+    '<div class="opt'+(selectedModules[key]?' selected':'')+'" onclick="toggleModule(\''+key+'\')">'+
+    '<span class="let">'+(selectedModules[key]?'✓':'')+'</span>'+
+    '<span><strong>'+label+'</strong><br><span class="muted">'+desc+'</span></span></div>';
+  app.innerHTML=
+  '<div class="wrap">'+
+    '<div class="card center" style="margin-top:24px;">'+
+      '<div class="badge">TES</div>'+
+      '<h1>Simulasi Tes Diagnostik</h1>'+
+      '<p class="muted">Rangkaian tes yang bisa digabung: kecerdasan (IST), minat karier (RIASEC), dan gaya belajar (VAK). Setiap modul berjalan otomatis satu per satu, dan hasilnya digabung dalam satu laporan di akhir.</p>'+
+    '</div>'+
+    '<div class="card">'+
+      '<h3 style="font-size:1rem;">Pilih Modul Tes</h3>'+
+      '<div class="opt-list">'+
+        modBtn('IST','Tes IST (Kecerdasan)','Verbal, numerik, figural, memori — estimasi IQ')+
+        modBtn('RIASEC','Tes Minat RIASEC','36 pernyataan minat karier (model Holland)')+
+        modBtn('GAYA','Tes Gaya Belajar','24 pernyataan gaya belajar Visual/Auditori/Kinestetik')+
+        modBtn('BAKAT','Tes Bakat Diferensial',selectedLevel==='sma'?'50 soal kemampuan — merekomendasikan mapel pilihan Kurikulum Merdeka':'50 soal kemampuan — mengarahkan potensi bakat & kegiatan pengembangan yang relevan')+
+      '</div>'+
+    '</div>'+
+    (selectedModules.IST ?
+    '<div class="card">'+
+      '<h3 style="font-size:1rem;">Level Soal IST</h3>'+
+      (lockedLevel ?
+        '<p class="muted" style="margin-top:8px;">Level soal untuk tautan ini sudah ditetapkan panitia: <strong>'+(lockedLevel==='smp'?'SMP':'SMA')+'</strong>. Jika ini tidak sesuai jenjang Anda, hubungi pengawas — jangan lanjutkan tes.</p>'
+        :
+        '<div style="display:flex;gap:10px;margin-top:8px;">'+
+          '<button class="btn'+(selectedLevel==='smp'?'':' secondary')+'" style="flex:1;" onclick="selectLevel(\'smp\')">SMP</button>'+
+          '<button class="btn'+(selectedLevel==='sma'?'':' secondary')+'" style="flex:1;" onclick="selectLevel(\'sma\')">SMA</button>'+
+        '</div>'
+      )+
+    '</div>' : '')+
+    '<div class="card">'+
+      '<p class="muted"><strong>Total:</strong> '+info.q+' soal/pernyataan dari '+info.count+' subtes/modul, estimasi '+info.m+' menit.</p>'+
+    '</div>'+
+    '<div class="card">'+
+      '<h3 style="font-size:1rem;">Mode Anti-Curang</h3>'+
+      '<p class="muted">Selama bagian tes berlangsung, aplikasi mendeteksi: berpindah tab/aplikasi lain dalam waktu cukup lama, dan keluar dari mode layar penuh. Gangguan sesaat (layar mati sebentar, notifikasi, dsb.) tidak dihitung sebagai pelanggaran. Setiap pelanggaran memicu bunyi alarm + getaran + peringatan di layar. Pelanggaran ke-'+MAX_VIOLATIONS+' akan mengunci tes dan membutuhkan PIN pengawas untuk melanjutkan.</p>'+
+    '</div>'+
+    '<div class="card">'+
+      '<h3 style="font-size:1rem;">Data Peserta</h3>'+
+      '<input id="inpName" type="text" placeholder="Nama lengkap" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-size:1rem;margin-bottom:10px;">'+
+      '<input id="inpSchool" type="text" placeholder="Asal sekolah" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-size:1rem;margin-bottom:10px;">'+
+      '<input id="inpClass" type="text" placeholder="Kelas" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-size:1rem;margin-bottom:10px;">'+
+      '<input id="inpNIS" type="text" inputmode="numeric" maxlength="5" placeholder="5 digit terakhir NIS" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-size:1rem;letter-spacing:2px;">'+
+      '<p class="muted" style="margin-top:10px;">5 digit terakhir NIS digunakan untuk mengecek hasil nanti di halaman "Cek Hasil". Hasil tes akan tersimpan ke Google Sheets setelah tes selesai.</p>'+
+      '<button class="btn block" style="margin-top:14px;" onclick="beginTest()"'+(anySelected?'':' disabled')+'>Mulai Tes</button>'+
+      (anySelected?'':'<p class="muted" style="color:var(--warn);margin-top:8px;">Pilih minimal satu modul tes.</p>')+
+    '</div>'+
+    '<p class="disclaimer">Instrumen ini dirancang dan diolah oleh tim LBB Gama Global dengan mengadaptasi struktur tes IST, RIASEC, dan VAK sebagai kerangka konseptual. Skor dan kategori yang dihasilkan bersifat estimatif dan heuristik, digunakan untuk kebutuhan pemetaan minat-bakat internal, bukan merupakan hasil tes psikometri resmi yang ternormakan (standardized-normed).</p>'+
+  '</div>';
+}
+
+function toggleModule(key){
+  selectedModules[key]=!selectedModules[key];
+  renderWelcome();
+}
+
+function selectLevel(lvl){
+  if(lockedLevel) return;
+  selectedLevel=lvl;
+  renderWelcome();
+}
+
+/* Tebak jenjang dari isian kelas (angka 7-9 => SMP, 10-12 => SMA).
+   Dipakai hanya untuk cek silang peringatan, bukan untuk mengubah pilihan siswa. */
+function inferLevelFromClass(kelasStr){
+  const m=kelasStr.match(/\d{1,2}/);
+  if(!m) return null;
+  const n=parseInt(m[0],10);
+  if(n>=7 && n<=9) return 'smp';
+  if(n>=10 && n<=12) return 'sma';
+  return null;
+}
+
+function beginTest(){
+  if(!(selectedModules.IST||selectedModules.RIASEC||selectedModules.GAYA||selectedModules.BAKAT)) return;
+  const nameVal=document.getElementById('inpName').value.trim();
+  if(!nameVal){ alert('Mohon isi nama terlebih dahulu.'); return; }
+  const nisVal=document.getElementById('inpNIS').value.trim();
+  if(!/^\d{5}$/.test(nisVal)){ alert('Mohon isi 5 digit terakhir NIS (angka saja).'); return; }
+  const classVal=document.getElementById('inpClass').value.trim();
+
+  // Cek silang: hanya relevan kalau level TIDAK dikunci lewat URL dan modul IST dipilih.
+  if(!lockedLevel && selectedModules.IST){
+    const inferred=inferLevelFromClass(classVal);
+    if(inferred && inferred!==selectedLevel){
+      const inferredLbl=inferred==='smp'?'SMP':'SMA';
+      const chosenLbl=selectedLevel==='smp'?'SMP':'SMA';
+      showConfirmDialog(
+        'Kelas yang Anda isi ("'+classVal+'") biasanya jenjang <strong>'+inferredLbl+'</strong>, tapi level soal yang dipilih <strong>'+chosenLbl+'</strong>. Lanjutkan dengan level '+chosenLbl+'?',
+        function(){ doBeginTest(nameVal,classVal,nisVal); },
+        'Ya, Lanjutkan '+chosenLbl,
+        'Batal, Ubah Level'
+      );
+      return;
+    }
+  }
+  doBeginTest(nameVal,classVal,nisVal);
+}
+
+function doBeginTest(nameVal,classVal,nisVal){
+  clearSession();
+  studentName=nameVal;
+  studentSchool=document.getElementById('inpSchool').value.trim();
+  studentClass=classVal;
+  studentNIS=nisVal;
+  currentLevel=selectedLevel;
+  sections=buildSections(currentLevel,selectedModules);
+  curIdx=0;
+  cheatCount=0;
+  cheatLog=[];
+  isLocked=false;
+  finalSaved=false;
+  armAntiCheat();
+  requestFS();
+  phase='intro';
+  render();
+  saveSession();
+  startHeartbeat();
+}
+
+function showConfirmDialog(msgHtml,onYes,yesLabel,noLabel){
+  const overlay=document.createElement('div');
+  overlay.className='confirm-overlay';
+  overlay.innerHTML=
+    '<div class="confirm-card">'+
+      '<p style="margin:0;">'+msgHtml+'</p>'+
+      '<div class="btn-row">'+
+        '<button class="btn secondary" id="genConfirmNo">'+(noLabel||'Batal')+'</button>'+
+        '<button class="btn" id="genConfirmYes">'+(yesLabel||'Ya')+'</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(overlay);
+  document.getElementById('genConfirmNo').onclick=()=>{ overlay.remove(); };
+  document.getElementById('genConfirmYes').onclick=()=>{ overlay.remove(); onYes(); };
+}
+
+let heartbeatHandle=null;
+// Diperlonggar dari 40 detik -> 120 detik supaya hemat kuota "total runtime trigger per hari"
+// dari Google (90 menit/hari untuk akun konsumer). Dengan 700 peserta, tiap heartbeat yang
+// dikirim itu ikut memakan kuota harian ini, jadi interval yang lebih longgar = jauh lebih hemat.
+// Konsekuensinya: status di monitor-live.html jadi update tiap ~2 menit, bukan tiap 40 detik --
+// masih cukup untuk memantau progres peserta, cuma kurang "real-time" dibanding sebelumnya.
+const HEARTBEAT_INTERVAL_MS = 120000;
+function startHeartbeat(){
+  if(heartbeatHandle) clearInterval(heartbeatHandle);
+  sendHeartbeat();
+  heartbeatHandle=setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+}
+function stopHeartbeat(){
+  if(heartbeatHandle){ clearInterval(heartbeatHandle); heartbeatHandle=null; }
+}
+function sendHeartbeat(){
+  if(!GAS_URL || GAS_URL.indexOf('PASTE_URL')===0) return;
+  const s=sections[curIdx];
+  const answeredCount = s ? (userAnswers[s.id]||[]).filter(a=>a!==null && a!==undefined).length : 0;
+  const beat={
+    type:'heartbeat',
+    nama:studentName, sekolah:studentSchool, kelas:studentClass, nis:studentNIS,
+    tahap: s ? (s.code+' - '+s.title) : phase,
+    tahapKe: curIdx+1, totalTahap: sections.length,
+    soalTerjawab: answeredCount, totalSoal: s ? s.questions.length : 0,
+    cheatCount, timestamp:new Date().toISOString()
+  };
+  fetch(GAS_URL,{method:'POST',body:JSON.stringify(beat)}).catch(err=>{
+    console.warn('Gagal mengirim heartbeat:', err);
+  });
+}
+
+function renderIntro(){
+  const s=sections[curIdx];
+  let exHtml='';
+  if(s.example){
+    const markLabel = s.scoring==='category' ? ' &nbsp;(contoh pilihan)' : ' &nbsp;✓';
+    exHtml='<div class="card" style="background:#FAF8F2;">'+
+      '<div class="muted" style="margin-bottom:8px;"><strong>Contoh:</strong></div>'+
+      '<div>'+s.example.q+'</div>'+
+      '<div class="opt-list" style="margin-top:10px;">'+
+      s.example.options.map((o,i)=>'<div class="opt'+(i===s.example.answer?' selected':'')+'"><span class="let">'+(s.scoring==='category'?(i+1):String.fromCharCode(65+i))+'</span>'+o+(i===s.example.answer?markLabel:'')+'</div>').join('')+
+      '</div></div>';
+  }
+  app.innerHTML=
+  '<div class="top-bar">'+progressDots()+'<span class="muted">Bagian '+(curIdx+1)+' / '+sections.length+'</span></div>'+
+  '<div class="wrap">'+
+    '<div class="card center">'+
+      '<div class="badge">'+s.code+'</div>'+
+      '<h2>'+s.title+'</h2>'+
+      '<p class="muted">'+s.desc+'</p>'+
+    '</div>'+
+    '<div class="card">'+
+      '<h3 style="font-size:1rem;">Instruksi</h3>'+
+      '<p class="muted">'+s.instruction+'</p>'+
+      '<p class="muted"><strong>Jumlah soal:</strong> '+s.questions.length+
+        (s.isMemory ? ' &nbsp;|&nbsp; <strong>Waktu menghafal:</strong> '+fmt(s.memorizeDuration)+' &nbsp;|&nbsp; <strong>Waktu menjawab:</strong> '+fmt(s.duration) : ' &nbsp;|&nbsp; <strong>Waktu:</strong> '+fmt(s.duration))+
+      '</p>'+
+    '</div>'+
+    exHtml+
+    '<button class="btn block" onclick="'+(s.isMemory?'startMemorize()':'startTest()')+'">'+(s.isMemory?'Mulai Menghafal':'Mulai Subtes')+'</button>'+
+  '</div>';
+}
+
+function startMemorize(){
+  phase='memorize';
+  armGraceUntil=Date.now()+1500;
+  secondsLeft=sections[curIdx].memorizeDuration;
+  render();
+  saveSession();
+  startMemorizeTimer();
+}
+
+function startMemorizeTimer(){
+  timerHandle=setInterval(()=>{
+    secondsLeft--;
+    const el=document.getElementById('timerDisplay');
+    if(el) el.textContent=fmt(secondsLeft);
+    if(secondsLeft<=10 && el) el.classList.add('low');
+    saveSession();
+    if(secondsLeft<=0){
+      clearInterval(timerHandle);
+      startTest();
+    }
+  },1000);
+}
+
+function renderMemorize(){
+  const s=sections[curIdx];
+  app.innerHTML=
+  '<div class="top-bar">'+progressDots()+'<span style="display:flex;gap:8px;align-items:center;">'+
+    (cheatCount>0?'<span class="timer low" style="font-size:0.85rem;">⚠ '+cheatCount+'/'+MAX_VIOLATIONS+'</span>':'')+
+    '<span class="timer" id="timerDisplay">'+fmt(secondsLeft)+'</span></span></div>'+
+  '<div class="wrap">'+
+    '<div class="card">'+
+      '<h2>Hafalkan Pasangan Berikut</h2>'+
+      '<p class="muted">Anda akan diuji setelah waktu ini habis, tanpa melihat daftar lagi.</p>'+
+      '<table class="mem-table">'+
+        s.pairs.map(([cat,item])=>'<tr><td>'+cat+'</td><td><strong>'+item+'</strong></td></tr>').join('')+
+      '</table>'+
+    '</div>'+
+  '</div>';
+}
+
+function startTest(){
+  const s=sections[curIdx];
+  phase='test';
+  armGraceUntil=Date.now()+1500;
+  secondsLeft=s.duration;
+  userAnswers[s.id]=new Array(s.questions.length).fill(null);
+  render();
+  saveSession();
+  startTestTimer();
+}
+
+function startTestTimer(){
+  timerHandle=setInterval(()=>{
+    secondsLeft--;
+    const el=document.getElementById('timerDisplay');
+    if(el){
+      el.textContent=fmt(secondsLeft);
+      if(secondsLeft<=30) el.classList.add('low');
+    }
+    saveSession();
+    if(secondsLeft<=0){
+      clearInterval(timerHandle);
+      finishSection(true);
+    }
+  },1000);
+}
+
+function selCls(sec,qIdx,oi){
+  const arr=userAnswers[sec.id];
+  return (arr && arr[qIdx]===oi) ? ' selected' : '';
+}
+
+function renderQOptions(sec,q,qIdx){
+  if(q.kind==='text'){
+    return '<div class="opt-list">'+
+      q.options.map((o,oi)=>'<div class="opt'+selCls(sec,qIdx,oi)+'" onclick="selectAnswer('+qIdx+','+oi+')" id="opt-'+qIdx+'-'+oi+'"><span class="let">'+String.fromCharCode(65+oi)+'</span><span>'+o+'</span></div>').join('')+
+    '</div>';
+  }
+  if(q.kind==='series'){
+    return '<div class="shape-row"><strong style="font-size:1.15rem;">'+q.seq.join(', ')+', <span style="color:var(--accent-dark)">?</span></strong></div>'+
+      '<div class="opt-list" style="grid-template-columns:repeat(4,1fr);display:grid;">'+
+      q.options.map((o,oi)=>'<div class="opt'+selCls(sec,qIdx,oi)+'" style="justify-content:center;" onclick="selectAnswer('+qIdx+','+oi+')" id="opt-'+qIdx+'-'+oi+'">'+o+'</div>').join('')+
+      '</div>';
+  }
+  if(q.kind==='figural'){
+    return '<div class="shape-row">'+
+      q.seq.map(sh=>shapeSVG(sh.sides,sh.color,undefined,sh.rot)).join('')+
+      '<span class="qm">?</span></div>'+
+      '<div class="fig-opts">'+
+      q.options.map((o,oi)=>'<div class="opt'+selCls(sec,qIdx,oi)+'" onclick="selectAnswer('+qIdx+','+oi+')" id="opt-'+qIdx+'-'+oi+'">'+shapeSVG(o.sides,o.color,undefined,o.rot)+'</div>').join('')+
+      '</div>';
+  }
+  if(q.kind==='cube'){
+    const net=q.net;
+    const layout=q.layout;
+    const pos=(p,col,row)=>'<div style="grid-column:'+col+';grid-row:'+row+';" class="cube-cell'+(p===q.target?' target':'')+'">'+net[p]+'</div>';
+    return '<p class="muted">Sisi bertanda kotak biru = <strong>'+q.target+'</strong>. Simbol apa yang berhadapan dengannya setelah dilipat?</p>'+
+      '<div class="cube-net">'+
+      pos(layout.top,2,1)+
+      pos(layout.col1,1,2)+
+      pos(layout.col2,2,2)+
+      pos(layout.col3,3,2)+
+      pos(layout.col4,4,2)+
+      pos(layout.bottom,2,3)+
+      '</div>'+
+      '<div class="cube-opts">'+
+      q.options.map((o,oi)=>'<div class="opt'+selCls(sec,qIdx,oi)+'" onclick="selectAnswer('+qIdx+','+oi+')" id="opt-'+qIdx+'-'+oi+'">'+o+'</div>').join('')+
+      '</div>';
+  }
+  if(q.kind==='likert'){
+    const labels=sec.scaleLabels;
+    return '<div class="opt-list">'+
+      labels.map((o,oi)=>'<div class="opt'+selCls(sec,qIdx,oi)+'" onclick="selectAnswer('+qIdx+','+oi+')" id="opt-'+qIdx+'-'+oi+'"><span class="let">'+(oi+1)+'</span><span>'+o+'</span></div>').join('')+
+    '</div>';
+  }
+  return '';
+}
+
+function renderTest(){
+  const s=sections[curIdx];
+  let qHtml='';
+  s.questions.forEach((q,qi)=>{
+    qHtml+='<div class="q-item"><div class="q-num">Soal '+(qi+1)+'</div>'+
+      (q.kind==='text'||q.kind==='likert' ? '<div>'+q.q+'</div>' : '')+
+      renderQOptions(s,q,qi)+
+    '</div>';
+  });
+  const answeredCount=(userAnswers[s.id]||[]).filter(a=>a!==null && a!==undefined).length;
+  app.innerHTML=
+  '<div class="top-bar">'+progressDots()+'<span style="display:flex;gap:8px;align-items:center;">'+
+    (cheatCount>0?'<span class="timer low" style="font-size:0.85rem;">⚠ '+cheatCount+'/'+MAX_VIOLATIONS+'</span>':'')+
+    '<span class="timer'+(secondsLeft<=30?' low':'')+'" id="timerDisplay">'+fmt(secondsLeft)+'</span></span></div>'+
+  '<div class="wrap">'+
+    '<div class="card" style="padding:14px 16px;">'+
+      '<strong>'+s.code+' — '+s.title+'</strong>'+
+      '<div class="progress-line"><div class="progress-fill" id="answeredBar" style="width:'+(answeredCount/s.questions.length*100)+'%"></div></div>'+
+      '<span class="muted" id="answeredCount">'+answeredCount+' / '+s.questions.length+' terjawab</span>'+
+    '</div>'+
+    '<div class="card">'+qHtml+'</div>'+
+    '<button class="btn block secondary" onclick="confirmFinish()">Selesaikan Bagian Ini Lebih Awal</button>'+
+  '</div>';
+}
+
+function selectAnswer(qIdx,optIdx){
+  const s=sections[curIdx];
+  userAnswers[s.id][qIdx]=optIdx;
+  const optCount=s.questions[qIdx].kind==='likert' ? s.scaleLabels.length : s.questions[qIdx].options.length;
+  for(let oi=0;oi<optCount;oi++){
+    const el=document.getElementById('opt-'+qIdx+'-'+oi);
+    if(el) el.classList.toggle('selected', oi===optIdx);
+  }
+  const answeredCount=userAnswers[s.id].filter(a=>a!==null).length;
+  const bar=document.getElementById('answeredBar');
+  const label=document.getElementById('answeredCount');
+  if(bar) bar.style.width=(answeredCount/s.questions.length*100)+'%';
+  if(label) label.textContent=answeredCount+' / '+s.questions.length+' terjawab';
+  saveSession();
+}
+
+function confirmFinish(){
+  const s=sections[curIdx];
+  const msg = s.scoring==='category' ?
+    'Selesaikan bagian ini sekarang? Pernyataan yang belum dijawab tidak akan dihitung.' :
+    'Selesaikan subtes ini sekarang? Jawaban yang belum diisi akan dianggap salah.';
+  const overlay=document.createElement('div');
+  overlay.className='confirm-overlay';
+  overlay.innerHTML=
+    '<div class="confirm-card">'+
+      '<p style="margin:0;">'+msg+'</p>'+
+      '<div class="btn-row">'+
+        '<button class="btn secondary" id="confirmNo">Batal</button>'+
+        '<button class="btn" id="confirmYes">Ya, Selesaikan</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(overlay);
+  document.getElementById('confirmNo').onclick=()=>{ overlay.remove(); };
+  document.getElementById('confirmYes').onclick=()=>{ overlay.remove(); finishSection(false); };
+}
+
+function finishSection(auto){
+  clearInterval(timerHandle);
+  const s=sections[curIdx];
+  const arr=userAnswers[s.id];
+  if(s.scoring==='category'){
+    const byCategory={};
+    s.questions.forEach((q,idx)=>{
+      const val=(arr[idx]!==null && arr[idx]!==undefined) ? arr[idx]+1 : 0;
+      if(!byCategory[q.category]) byCategory[q.category]={sum:0,count:0};
+      byCategory[q.category].sum+=val;
+      byCategory[q.category].count+=1;
+    });
+    sectionScores[s.id]={byCategory};
+    const answeredCount=arr.filter(a=>a!==null).length;
+    showTransition(auto ? 'Waktu Habis' : 'Modul Selesai', s.title+' — '+answeredCount+' dari '+s.questions.length+' pernyataan dijawab');
+  } else if(s.scoring==='aptitude'){
+    const byCategory={};
+    let correct=0;
+    s.questions.forEach((q,idx)=>{
+      const isCorrect=arr[idx]===q.answer;
+      if(isCorrect) correct++;
+      if(!byCategory[q.category]) byCategory[q.category]={correct:0,count:0};
+      byCategory[q.category].count+=1;
+      if(isCorrect) byCategory[q.category].correct+=1;
+    });
+    sectionScores[s.id]={byCategory,correct};
+    const answeredCountApt=arr.filter(a=>a!==null && a!==undefined).length;
+    showTransition(auto ? 'Waktu Habis' : 'Modul Selesai', s.title+' — '+answeredCountApt+' dari '+s.questions.length+' soal dikerjakan');
+  } else {
+    let correct=0;
+    s.questions.forEach((q,idx)=>{ if(arr[idx]===q.answer) correct++; });
+    sectionScores[s.id]=correct;
+    const answeredCount=arr.filter(a=>a!==null && a!==undefined).length;
+    showTransition(auto ? 'Waktu Habis' : 'Subtes Selesai', s.title+' — '+answeredCount+' dari '+s.questions.length+' soal dikerjakan');
+  }
+}
+
+function showTransition(title,subtitle){
+  const overlay=document.createElement('div');
+  overlay.className='overlay';
+  overlay.innerHTML='<h2 style="color:#fff;">'+title+'</h2><p>'+subtitle+'</p>';
+  document.body.appendChild(overlay);
+  setTimeout(()=>{
+    overlay.remove();
+    curIdx++;
+    if(curIdx>=sections.length){ phase='final'; disarmAntiCheat(); } else { phase='intro'; saveSession(); }
+    render();
+  },1600);
+}
+
+/* ============ FINAL RESULTS ============ */
+const DOMAIN_MAP={SE:'Verbal',WA:'Verbal',AN:'Verbal',GE:'Verbal',RA:'Numerik',ZR:'Numerik',FA:'Figural',WU:'Figural',ME:'Memori'};
+
+function classify(iq){
+  if(iq>=130) return 'Sangat Superior';
+  if(iq>=120) return 'Superior';
+  if(iq>=110) return 'Di Atas Rata-rata';
+  if(iq>=90) return 'Rata-rata';
+  if(iq>=80) return 'Di Bawah Rata-rata';
+  if(iq>=70) return 'Batas Lemah (Borderline)';
+  return 'Perlu Asesmen Lanjutan';
+}
+
+function computeResults(){
+  stopHeartbeat();
+  const istSections=sections.filter(s=>s.module==='IST');
+  const riasecSection=sections.find(s=>s.id==='RIASEC');
+  const gayaSection=sections.find(s=>s.id==='GAYA');
+  const bakatSection=sections.find(s=>s.id==='BAKAT');
+
+  lastResults={nama:studentName,sekolah:studentSchool,kelas:studentClass,nis:studentNIS,cheatCount,cheatLog:cheatLog.join(' | '),timestamp:new Date().toISOString(),bankVersion:ITEM_BANK_VERSION};
+
+  if(GAS_URL && GAS_URL.indexOf('PASTE_URL')!==0){
+    fetch(GAS_URL,{method:'POST',body:JSON.stringify({
+      type:'heartbeat', nama:studentName, sekolah:studentSchool, kelas:studentClass, nis:studentNIS,
+      tahap:'Selesai', tahapKe:sections.length, totalTahap:sections.length,
+      soalTerjawab:0, totalSoal:0, cheatCount, selesai:true, timestamp:new Date().toISOString()
+    })}).catch(()=>{});
+  }
+
+  if(istSections.length){
+    let totalCorrect=0, totalMax=0;
+    const domainStats={};
+    istSections.forEach(s=>{
+      const c=sectionScores[s.id]||0, m=s.questions.length;
+      totalCorrect+=c; totalMax+=m;
+      const d=DOMAIN_MAP[s.id];
+      if(!domainStats[d]) domainStats[d]={c:0,m:0};
+      domainStats[d].c+=c; domainStats[d].m+=m;
+    });
+    const pct=totalCorrect/totalMax*100;
+    let iq=Math.round(pct+35);
+    iq=Math.max(55,Math.min(145,iq));
+    lastResults.level=currentLevel==='sma'?'SMA':'SMP';
+    lastResults.iqScores=Object.fromEntries(istSections.map(s=>[s.id, sectionScores[s.id]||0]));
+    lastResults.iqTotalCorrect=totalCorrect;
+    lastResults.iqTotalMax=totalMax;
+    lastResults.iqPercentage=Math.round(pct);
+    lastResults.iq=iq;
+    lastResults.iqClassification=classify(iq);
+    lastResults.iqDomain=Object.fromEntries(Object.keys(domainStats).map(d=>[d, Math.round(domainStats[d].c/domainStats[d].m*100)]));
+  }
+
+  if(riasecSection){
+    const byCat=(sectionScores.RIASEC&&sectionScores.RIASEC.byCategory)||{};
+    const rows=Object.keys(RIASEC_LABELS).map(k=>{
+      const st=byCat[k]||{sum:0,count:1};
+      return {key:k,pct:Math.round(st.sum/(st.count*4)*100)};
+    }).sort((a,b)=>b.pct-a.pct);
+    lastResults.riasecScores=Object.fromEntries(rows.map(r=>[r.key,r.pct]));
+    lastResults.riasecTopCode=rows.slice(0,3).map(r=>r.key).join('');
+  }
+
+  if(gayaSection){
+    const byCat=(sectionScores.GAYA&&sectionScores.GAYA.byCategory)||{};
+    const rows=Object.keys(GAYA_LABELS).map(k=>{
+      const st=byCat[k]||{sum:0,count:1};
+      return {key:k,pct:Math.round(st.sum/(st.count*4)*100)};
+    }).sort((a,b)=>b.pct-a.pct);
+    lastResults.gayaScores=Object.fromEntries(rows.map(r=>[r.key,r.pct]));
+    lastResults.gayaDominant=rows[0].key;
+  }
+
+  if(bakatSection){
+    const byCat=(sectionScores.BAKAT&&sectionScores.BAKAT.byCategory)||{};
+    const rows=Object.keys(BAKAT_LABELS).map(k=>{
+      const st=byCat[k]||{correct:0,count:1};
+      return {key:k,pct:Math.round(st.correct/st.count*100)};
+    }).sort((a,b)=>b.pct-a.pct);
+    lastResults.bakatScores=Object.fromEntries(rows.map(r=>[r.key,r.pct]));
+    lastResults.bakatTop=rows[0].key;
+    lastResults.bakatRekomendasi=(currentLevel==='sma'?BAKAT_DESC_SMA:BAKAT_DESC_SMP)[rows[0].key];
+  }
+}
+
+let finalSaved=false;
+
+function renderFinal(){
+  computeResults();
+  lastResults.status='Selesai Normal';
+  if(!finalSaved){
+    finalSaved=true;
+    // cadangkan dulu segera (tidak ikut ditunda), baru pengiriman ke server-nya yang di-jitter
+    try{ localStorage.setItem(PENDING_KEY, JSON.stringify(lastResults)); }catch(e){}
+    const jitterMs=Math.floor(Math.random()*SUBMIT_JITTER_MAX_MS);
+    setTimeout(saveToSheet, jitterMs);
+  }
+  clearSession();
+
+  app.innerHTML=
+  '<div class="wrap">'+
+    '<div class="card center" style="margin-top:40px;padding:32px 20px;">'+
+      '<div class="badge">✓</div>'+
+      '<h1>Tes Selesai</h1>'+
+      '<p class="muted">Terima kasih, '+studentName+'. Jawaban Anda telah tercatat.</p>'+
+      '<p class="muted" style="margin-top:6px;">Hasil tes akan disampaikan oleh panitia/pengawas.</p>'+
+    '</div>'+
+    '<p class="disclaimer">Catatan: Asesmen ini disusun oleh LBB Gama Global dengan mengacu pada prinsip-prinsip tes IST, RIASEC, dan gaya belajar VAK. Hasil yang tertera merupakan estimasi hasil olahan internal untuk tujuan pemetaan potensi dan minat, bukan skor psikometri resmi bersertifikat.</p>'+
+    '<button class="btn block secondary" style="margin-top:10px;" onclick="location.reload()">Selesai</button>'+
+  '</div>';
+}
+
+let lastResults=null;
+const PENDING_KEY='pendingResultSubmission_v1';
+
+function saveToSheet(){
+  if(!GAS_URL || GAS_URL.indexOf('PASTE_URL')===0){
+    console.warn('GAS_URL belum dikonfigurasi — hasil tidak dikirim ke Google Sheets.');
+    return;
+  }
+  try{ localStorage.setItem(PENDING_KEY, JSON.stringify(lastResults)); }catch(e){}
+  sendResultWithRetry_(lastResults, 3);
+}
+
+function sendResultWithRetry_(payload, attemptsLeft){
+  fetch(GAS_URL,{method:'POST',body:JSON.stringify(payload)})
+    .then(()=>{
+      console.log('Hasil berhasil dikirim ke Google Sheets.');
+      try{ localStorage.removeItem(PENDING_KEY); }catch(e){}
+    })
+    .catch(err=>{
+      console.warn('Gagal mengirim hasil (percobaan tersisa: '+attemptsLeft+'):', err);
+      if(attemptsLeft>1){
+        setTimeout(()=>sendResultWithRetry_(payload, attemptsLeft-1), 4000);
+      } else {
+        // server mungkin sedang sangat sibuk — jangan menyerah, coba lagi tiap 25 detik di background
+        // selama halaman ini masih terbuka, sambil tetap simpan cadangan di localStorage.
+        console.warn('Masuk mode retry background, akan dicoba lagi tiap 25 detik...');
+        setTimeout(()=>sendResultWithRetry_(payload, 1), 25000);
+      }
+    });
+}
+
+// kalau siswa sempat menutup/refresh halaman "Selesai" sebelum hasil berhasil terkirim,
+// begitu index.html dibuka lagi di HP yang sama, coba kirim ulang hasil yang tertunda.
+(function resendPendingIfAny(){
+  try{
+    const pending=localStorage.getItem(PENDING_KEY);
+    if(pending){
+      console.log('Ditemukan hasil tertunda dari sesi sebelumnya, mencoba kirim ulang...');
+      sendResultWithRetry_(JSON.parse(pending), 3);
+    }
+  }catch(e){}
+})();
+
+const savedSession=loadSavedSession();
+if(savedSession){
+  pendingResume=savedSession;
+  phase='resumePrompt';
+}
+render();
+</script>
+</body>
+</html>

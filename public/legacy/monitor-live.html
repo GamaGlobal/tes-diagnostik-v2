@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Monitor Live — Peserta Sedang Mengerjakan</title>
+<style>
+  :root{
+    --bg:#F3F0E6; --ink:#20242B; --ink-soft:#565B63; --panel:#FFFFFF;
+    --line:#DCD6C7; --accent:#0E5C63; --accent-dark:#0A4247;
+    --warn:#9A3B2E; --good:#2F6D3A; --badge-bg:#EFE9D8;
+    font-size:16px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding-bottom:40px;}
+  h1,h2,h3{font-family:Georgia,'Iowan Old Style',serif;margin:0 0 8px;}
+  .wrap{max-width:960px;margin:0 auto;padding:20px 16px 60px;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:16px;}
+  .badge{width:74px;height:74px;border-radius:50%;border:2px dashed var(--accent);display:flex;align-items:center;justify-content:center;font-family:Georgia,serif;font-weight:700;font-size:1.4rem;color:var(--accent-dark);margin:0 auto 14px;background:var(--badge-bg);}
+  .center{text-align:center;}
+  .btn{display:inline-block;background:var(--accent);color:#fff;border:none;padding:12px 20px;border-radius:8px;font-size:0.95rem;font-weight:600;cursor:pointer;}
+  .btn.block{display:block;width:100%;}
+  .btn.small{padding:6px 12px;font-size:0.82rem;}
+  .btn.secondary{background:transparent;color:var(--accent-dark);border:1px solid var(--accent);}
+  .muted{color:var(--ink-soft);font-size:0.92rem;line-height:1.5;}
+  input{width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-size:1rem;margin-bottom:10px;}
+  .err{color:var(--warn);font-size:0.88rem;min-height:18px;margin:2px 0 8px;text-align:center;}
+  .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  .stat-box{background:var(--badge-bg);border-radius:8px;padding:12px;text-align:center;}
+  .stat-box .num{font-family:Georgia,serif;font-size:1.6rem;font-weight:700;color:var(--accent-dark);}
+  .stat-box .lbl{font-size:0.75rem;color:var(--ink-soft);}
+  .p-card{border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:10px;}
+  .p-top{display:flex;justify-content:space-between;align-items:baseline;}
+  .p-name{font-weight:700;}
+  .p-sub{font-size:0.8rem;color:var(--ink-soft);}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;}
+  .dot.live{background:var(--good);}
+  .dot.stale{background:var(--warn);}
+  .dot.done{background:var(--ink-soft);}
+  .progress-line{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:6px 0 4px;}
+  .progress-fill{height:100%;background:var(--accent);}
+  .flag{color:var(--warn);font-weight:700;}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center;}
+  .toolbar input{flex:1;min-width:160px;margin-bottom:0;}
+  .loading{display:flex;align-items:center;justify-content:center;gap:8px;padding:30px 0;color:var(--ink-soft);}
+  .refresh-note{font-size:0.75rem;color:var(--ink-soft);text-align:center;margin-top:-6px;margin-bottom:10px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* ============ KONFIGURASI ============ */
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxWx1FS-0htyoWmfPAT8adeoOQpxhRjscdcLIE8qNNZOPsTcuZAAtwGzw8ytlUVjxRB/exec';
+const AUTO_REFRESH_MS = 8000; // refresh tiap 8 detik
+const STALE_AFTER_S = 300; // kalau tidak update >5 menit, dianggap kemungkinan terhenti/keluar.
+// PENTING: index.html sekarang kirim heartbeat tiap 120 detik (HEARTBEAT_INTERVAL_MS di sana).
+// Angka ini HARUS lebih besar dari itu (idealnya >=2x, plus buffer jaringan) -- kalau nanti
+// interval heartbeat di index.html diubah lagi, ubah juga angka ini supaya tidak salah tandai
+// peserta yang sebenarnya masih aktif sebagai "terhenti".
+
+const app=document.getElementById('app');
+let liveData=[];
+let dashPin='';
+let refreshHandle=null;
+
+function renderLogin(errMsg){
+  app.innerHTML=
+  '<div class="wrap">'+
+    '<div class="card center" style="margin-top:60px;">'+
+      '<div class="badge">🔴</div>'+
+      '<h1>Monitor Live</h1>'+
+      '<p class="muted">Pantau peserta yang sedang mengerjakan tes secara real-time. Masukkan PIN panitia.</p>'+
+      '<input id="inpPin" type="password" inputmode="numeric" placeholder="PIN Dashboard" style="text-align:center;letter-spacing:4px;">'+
+      '<p class="err">'+(errMsg||'')+'</p>'+
+      '<button class="btn block" onclick="loginDash()">Masuk</button>'+
+    '</div>'+
+  '</div>';
+}
+
+function renderLoading(){
+  app.innerHTML='<div class="wrap"><div class="loading">Memuat data…</div></div>';
+}
+
+function loginDash(){
+  const pin=document.getElementById('inpPin').value.trim();
+  if(!pin){ renderLogin('Mohon isi PIN.'); return; }
+  renderLoading();
+  fetch(GAS_URL+'?action=live&pin='+encodeURIComponent(pin)+'&_ts='+Date.now(), {cache:'no-store'})
+    .then(r=>r.json())
+    .then(res=>{
+      if(!res.ok){ renderLogin(res.error||'PIN salah.'); return; }
+      dashPin=pin;
+      liveData=res.live||[];
+      renderMonitor();
+      startAutoRefresh();
+    })
+    .catch(()=>{ renderLogin('Gagal terhubung ke server. Coba lagi.'); });
+}
+
+function startAutoRefresh(){
+  if(refreshHandle) clearInterval(refreshHandle);
+  refreshHandle=setInterval(fetchLive, AUTO_REFRESH_MS);
+}
+
+function fetchLive(){
+  // &_ts=... + cache:'no-store' supaya browser/proxy tidak nyuguhin hasil lama (data "macet")
+  fetch(GAS_URL+'?action=live&pin='+encodeURIComponent(dashPin)+'&_ts='+Date.now(), {cache:'no-store'})
+    .then(r=>r.json())
+    .then(res=>{
+      if(!res.ok) return;
+      liveData=res.live||[];
+      renderMonitor(document.getElementById('searchBoxLive')?document.getElementById('searchBoxLive').value:'');
+    })
+    .catch(()=>{});
+}
+
+function secondsAgo(ts){
+  const t=new Date(ts).getTime();
+  if(isNaN(t)) return 99999;
+  return Math.floor((Date.now()-t)/1000);
+}
+
+function fmtAgo(s){
+  if(s<60) return s+' detik lalu';
+  return Math.floor(s/60)+' menit lalu';
+}
+
+function renderMonitor(filter){
+  filter=(filter||'').toLowerCase();
+  const rows=liveData.map(r=>{
+    const s=secondsAgo(r.TerakhirUpdate);
+    const status = r.Status==='Selesai' ? 'done' : (s>STALE_AFTER_S ? 'stale' : 'live');
+    return {r, s, status};
+  }).sort((a,b)=>{
+    const order={live:0, stale:1, done:2};
+    return order[a.status]-order[b.status] || a.s-b.s;
+  });
+
+  const activeCount=rows.filter(x=>x.status==='live').length;
+  const staleCount=rows.filter(x=>x.status==='stale').length;
+  const doneCount=rows.filter(x=>x.status==='done').length;
+
+  const filteredRows=rows.filter(({r})=>
+    !filter || (r.Nama||'').toLowerCase().includes(filter) || (r.Sekolah||'').toLowerCase().includes(filter) || (r.Kelas||'').toLowerCase().includes(filter) || String(r.NIS||'').includes(filter)
+  );
+
+  const cards=filteredRows.map(({r,s,status})=>{
+    const pct = r.TotalSoal>0 ? Math.round((r.SoalTerjawab/r.TotalSoal)*100) : 0;
+    const statusLabel = status==='done' ? 'Selesai' : (status==='stale' ? 'Kemungkinan terhenti' : 'Aktif');
+    const nisEsc=String(r.NIS||'').replace(/'/g,"\\'");
+    return '<div class="p-card">'+
+      '<div class="p-top">'+
+        '<span class="p-name"><span class="dot '+status+'"></span>'+(r.Nama||'-')+'</span>'+
+        '<span class="p-sub">'+fmtAgo(s)+'</span>'+
+      '</div>'+
+      '<div class="p-sub">'+(r.Sekolah||'-')+' • Kelas '+(r.Kelas||'-')+' • NIS '+(r.NIS||'-')+'</div>'+
+      '<div class="p-sub" style="margin-top:4px;">Tahap '+(r.TahapKe||'-')+'/'+(r.TotalTahap||'-')+' — '+(r.Tahap||'-')+' • '+statusLabel+
+        (Number(r.Pelanggaran)>0 ? ' • <span class="flag">⚠ '+r.Pelanggaran+' pelanggaran</span>' : '')+
+      '</div>'+
+      (r.TotalSoal>0 ? '<div class="progress-line"><div class="progress-fill" style="width:'+pct+'%"></div></div><div class="p-sub">'+(r.SoalTerjawab||0)+' / '+(r.TotalSoal||0)+' soal terjawab</div>' : '')+
+      (status!=='done' ?
+        '<div style="display:flex;gap:8px;margin-top:8px;">'+
+          '<button class="btn small secondary" onclick="forceSubmitLive(\''+nisEsc+'\',\''+(r.Nama||'').replace(/'/g,"\\'")+'\')">▶ Submit Paksa</button>'+
+          '<button class="btn small secondary" style="border-color:var(--warn);color:var(--warn);" onclick="hapusLive(\''+nisEsc+'\',\''+(r.Nama||'').replace(/'/g,"\\'")+'\')">🗑 Hapus</button>'+
+        '</div>' : '')+
+    '</div>';
+  }).join('');
+
+  app.innerHTML=
+  '<div class="wrap">'+
+    '<div class="card center">'+
+      '<h1>Monitor Live</h1>'+
+      '<p class="muted">Status peserta yang sedang mengerjakan tes saat ini</p>'+
+    '</div>'+
+    '<div class="card">'+
+      '<div class="stat-grid">'+
+        '<div class="stat-box"><div class="num">'+activeCount+'</div><div class="lbl">Sedang Aktif</div></div>'+
+        '<div class="stat-box"><div class="num">'+staleCount+'</div><div class="lbl">Kemungkinan Terhenti</div></div>'+
+        '<div class="stat-box"><div class="num">'+doneCount+'</div><div class="lbl">Baru Selesai</div></div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="card">'+
+      '<div class="toolbar">'+
+        '<input id="searchBoxLive" type="text" placeholder="Cari nama / sekolah / kelas / NIS…" value="'+filter+'" oninput="renderMonitor(this.value)">'+
+        '<button class="btn small secondary" onclick="fetchLive()">↻ Muat Ulang Sekarang</button>'+
+      '</div>'+
+      '<p class="refresh-note">Auto-refresh tiap '+(AUTO_REFRESH_MS/1000)+' detik</p>'+
+      (cards || '<p class="muted center">'+(filter ? 'Tidak ada peserta yang cocok dengan pencarian.' : 'Belum ada peserta yang sedang mengerjakan.')+'</p>')+
+    '</div>'+
+  '</div>';
+}
+
+function forceSubmitLive(nis,nama){
+  if(!confirm('Submit paksa hasil untuk "'+nama+'"? Bagian yang belum sempat dijawab akan dianggap tidak terjawab/nol, dan peserta akan dianggap SELESAI. Tindakan ini tidak bisa dibatalkan.')) return;
+  fetch(GAS_URL,{method:'POST',body:JSON.stringify({action:'forceSubmit',pin:dashPin,nis:nis})})
+    .then(r=>r.json())
+    .then(res=>{
+      if(!res || !res.ok){ alert('Gagal submit paksa: '+((res&&res.error)||'server tidak merespons sesuai harapan. Pastikan Code.gs sudah mendukung action "forceSubmit".')); return; }
+      fetchLive();
+    })
+    .catch(()=>{ alert('Gagal terhubung ke server saat submit paksa.'); });
+}
+
+function hapusLive(nis,nama){
+  if(!confirm('Hapus entri pemantauan untuk "'+nama+'" dari Monitor Live? Ini hanya menghapus catatan progres real-time, bukan hasil akhir jika sudah tersimpan di rekap.')) return;
+  fetch(GAS_URL,{method:'POST',body:JSON.stringify({action:'deleteLive',pin:dashPin,nis:nis})})
+    .then(r=>r.json())
+    .then(res=>{
+      if(!res || !res.ok){ alert('Gagal menghapus: '+((res&&res.error)||'server tidak merespons sesuai harapan. Pastikan Code.gs sudah mendukung action "deleteLive".')); return; }
+      fetchLive();
+    })
+    .catch(()=>{ alert('Gagal terhubung ke server saat menghapus.'); });
+}
+
+renderLogin();
+</script>
+</body>
+</html>

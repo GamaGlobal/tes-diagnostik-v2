@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Cek Hasil Tes Diagnostik</title>
+<style>
+  :root{
+    --bg:#F3F0E6; --ink:#20242B; --ink-soft:#565B63; --panel:#FFFFFF;
+    --line:#DCD6C7; --accent:#0E5C63; --accent-dark:#0A4247;
+    --warn:#9A3B2E; --good:#2F6D3A; --badge-bg:#EFE9D8;
+    font-size:16px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding-bottom:40px;}
+  h1,h2,h3{font-family:Georgia,'Iowan Old Style',serif;margin:0 0 8px;}
+  .wrap{max-width:640px;margin:0 auto;padding:20px 16px 60px;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:16px;}
+  .badge{width:74px;height:74px;border-radius:50%;border:2px dashed var(--accent);display:flex;align-items:center;justify-content:center;font-family:Georgia,serif;font-weight:700;font-size:1.4rem;color:var(--accent-dark);margin:0 auto 14px;background:var(--badge-bg);}
+  .center{text-align:center;}
+  .btn{display:inline-block;background:var(--accent);color:#fff;border:none;padding:13px 22px;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;text-align:center;}
+  .btn:active{background:var(--accent-dark);}
+  .btn.block{display:block;width:100%;}
+  .btn:disabled{opacity:0.5;cursor:not-allowed;}
+  .muted{color:var(--ink-soft);font-size:0.92rem;line-height:1.5;}
+  input{width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;font-size:1.2rem;text-align:center;letter-spacing:4px;margin-bottom:10px;}
+  .result-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:0.95rem;}
+  .result-row:last-child{border-bottom:none;}
+  .iq-number{font-family:Georgia,serif;font-size:4rem;font-weight:700;color:var(--accent-dark);line-height:1;}
+  .tag{display:inline-block;padding:4px 12px;border-radius:20px;background:var(--badge-bg);color:var(--accent-dark);font-weight:700;font-size:0.9rem;}
+  .disclaimer{font-size:0.82rem;color:var(--ink-soft);border-top:1px dashed var(--line);padding-top:12px;margin-top:16px;line-height:1.5;}
+  .bar-track{height:10px;background:var(--line);border-radius:5px;overflow:hidden;margin:4px 0 2px;}
+  .bar-fill{height:100%;background:var(--accent);}
+  .err{color:var(--warn);font-size:0.88rem;min-height:18px;margin:2px 0 8px;text-align:center;}
+  .loading{display:flex;align-items:center;justify-content:center;gap:8px;padding:30px 0;color:var(--ink-soft);}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* ============ KONFIGURASI ============ */
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxWx1FS-0htyoWmfPAT8adeoOQpxhRjscdcLIE8qNNZOPsTcuZAAtwGzw8ytlUVjxRB/exec';
+
+const RIASEC_LABELS={R:'Realistic (Praktis/Teknik)',I:'Investigative (Analitis/Riset)',A:'Artistic (Kreatif/Seni)',S:'Social (Sosial/Membantu)',E:'Enterprising (Memimpin/Wirausaha)',C:'Conventional (Terorganisir/Administratif)'};
+const GAYA_LABELS={V:'Visual',A:'Auditori',K:'Kinestetik'};
+const BAKAT_LABELS={MIPA:'Matematika & Sains (MIPA)',IPS:'Ilmu Pengetahuan Sosial (IPS)',BHS:'Bahasa & Sastra',INF:'Informatika & Logika Komputasi',VOK:'Vokasi & Keterampilan Teknis'};
+
+const app=document.getElementById('app');
+
+function renderForm(errMsg){
+  app.innerHTML=
+  '<div class="wrap">'+
+    '<div class="card center" style="margin-top:24px;">'+
+      '<div class="badge">HASIL</div>'+
+      '<h1>Cek Hasil Tes Diagnostik</h1>'+
+      '<p class="muted">Masukkan 5 digit terakhir NIS Anda untuk melihat hasil tes.</p>'+
+    '</div>'+
+    '<div class="card">'+
+      '<input id="inpNIS" type="text" inputmode="numeric" maxlength="5" placeholder="Contoh: 00123">'+
+      '<p class="err">'+(errMsg||'')+'</p>'+
+      '<button class="btn block" onclick="lookup()">Lihat Hasil</button>'+
+    '</div>'+
+    '<p class="disclaimer">Catatan: Asesmen ini disusun oleh LBB Gama Global dengan mengacu pada prinsip-prinsip tes IST, RIASEC, dan gaya belajar VAK. Hasil yang tertera merupakan estimasi hasil olahan internal untuk tujuan pemetaan potensi dan minat, bukan skor psikometri resmi bersertifikat.</p>'+
+  '</div>';
+}
+
+function renderLoading(){
+  app.innerHTML='<div class="wrap"><div class="loading">Mencari hasil…</div></div>';
+}
+
+function lookup(){
+  const nis=document.getElementById('inpNIS').value.trim();
+  if(!/^\d{5}$/.test(nis)){ renderForm('Mohon isi 5 digit angka.'); return; }
+  renderLoading();
+  fetch(GAS_URL+'?action=lookup&nis='+encodeURIComponent(nis)+'&_ts='+Date.now(), {cache:'no-store'})
+    .then(r=>r.json())
+    .then(res=>{
+      if(!res.ok){ renderForm(res.error||'Data tidak ditemukan.'); return; }
+      renderResult(res.data);
+    })
+    .catch(()=>{ renderForm('Gagal terhubung ke server. Coba lagi.'); });
+}
+
+function bar(pct){
+  return '<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%"></div></div>';
+}
+
+function isDash(v){ return v===undefined || v===null || v==='' || v==='-'; }
+function bankVersionOf(r){ return r['Versi Bank Soal']||r.bankVersion||r['Bank Soal']||''; }
+
+function renderResult(d){
+  let html='<div class="wrap">'+
+    '<div class="card center" style="margin-top:24px;">'+
+      '<div class="badge">✓</div>'+
+      '<h1>'+(d.Nama||'-')+'</h1>'+
+      '<p class="muted">'+(d.Sekolah||'-')+' &nbsp;•&nbsp; Kelas '+(d.Kelas||'-')+'</p>'+
+    '</div>';
+
+  if(!isDash(d['Estimasi IQ'])){
+    html+='<div class="card center">'+
+      '<div class="muted">Estimasi IQ</div>'+
+      '<div class="iq-number">'+d['Estimasi IQ']+'</div>'+
+      '<div class="tag">'+(d['Klasifikasi']||'')+'</div>'+
+    '</div>';
+    const domain={Verbal:d['Verbal (%)'],Numerik:d['Numerik (%)'],Figural:d['Figural (%)'],Memori:d['Memori (%)']};
+    html+='<div class="card"><h3 style="font-size:1rem;">Rincian Domain</h3>';
+    Object.keys(domain).forEach(k=>{
+      if(isDash(domain[k])) return;
+      html+='<div class="result-row"><span>'+k+'</span><span>'+domain[k]+'%</span></div>'+bar(domain[k]);
+    });
+    html+='</div>';
+  }
+
+  if(!isDash(d['Kode RIASEC (3 Besar)'])){
+    const scores={R:d['R (%)'],I:d['I (%)'],A:d['A (%)'],S:d['S (%)'],E:d['E (%)'],C:d['C (%)']};
+    html+='<div class="card">'+
+      '<h3 style="font-size:1rem;">Minat Karier (RIASEC)</h3>'+
+      '<p class="muted">Kode dominan: <strong>'+d['Kode RIASEC (3 Besar)']+'</strong></p>';
+    Object.keys(scores).filter(k=>!isDash(scores[k])).sort((a,b)=>scores[b]-scores[a]).forEach(k=>{
+      html+='<div class="result-row"><span>'+(RIASEC_LABELS[k]||k)+'</span><span>'+scores[k]+'%</span></div>'+bar(scores[k]);
+    });
+    html+='</div>';
+  }
+
+  if(!isDash(d['Gaya Belajar Dominan'])){
+    const scores={V:d['Visual (%)'],A:d['Auditori (%)'],K:d['Kinestetik (%)']};
+    html+='<div class="card">'+
+      '<h3 style="font-size:1rem;">Gaya Belajar</h3>'+
+      '<p class="muted">Gaya dominan: <strong>'+(GAYA_LABELS[d['Gaya Belajar Dominan']]||d['Gaya Belajar Dominan'])+'</strong></p>';
+    Object.keys(scores).filter(k=>!isDash(scores[k])).sort((a,b)=>scores[b]-scores[a]).forEach(k=>{
+      html+='<div class="result-row"><span>'+(GAYA_LABELS[k]||k)+'</span><span>'+scores[k]+'%</span></div>'+bar(scores[k]);
+    });
+    html+='</div>';
+  }
+
+  if(!isDash(d['Bakat Dominan'])){
+    const scores={MIPA:d['MIPA (%)'],IPS:d['IPS (%)'],BHS:d['Bahasa (%)'],INF:d['Informatika (%)'],VOK:d['Vokasi (%)']};
+    html+='<div class="card">'+
+      '<h3 style="font-size:1rem;">Bakat Diferensial</h3>'+
+      '<p class="muted">Rumpun terkuat: <strong>'+(BAKAT_LABELS[d['Bakat Dominan']]||d['Bakat Dominan'])+'</strong></p>'+
+      '<p class="muted">'+(d['Rekomendasi Mapel Pilihan']||'')+'</p>';
+    Object.keys(scores).filter(k=>!isDash(scores[k])).sort((a,b)=>scores[b]-scores[a]).forEach(k=>{
+      html+='<div class="result-row"><span>'+(BAKAT_LABELS[k]||k)+'</span><span>'+scores[k]+'%</span></div>'+bar(scores[k]);
+    });
+    html+='</div>';
+  }
+
+  html+='<button class="btn block" style="background:transparent;color:var(--accent-dark);border:1px solid var(--accent);" onclick="renderForm()">Cek NIS Lain</button>';
+  const bv=bankVersionOf(d);
+  html+='<p class="disclaimer">Catatan: Asesmen ini disusun oleh LBB Gama Global dengan mengacu pada prinsip-prinsip tes IST, RIASEC, dan gaya belajar VAK. Hasil yang tertera merupakan estimasi hasil olahan internal untuk tujuan pemetaan potensi dan minat, bukan skor psikometri resmi bersertifikat.'+(bv?' (Versi bank soal: '+bv+')':'')+'</p>';
+  html+='</div>';
+  app.innerHTML=html;
+}
+
+renderForm();
+</script>
+</body>
+</html>
