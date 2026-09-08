@@ -24,6 +24,17 @@ const STATUS_LABEL = {
   selesai_paksa_panitia: 'Diselesaikan Panitia',
   dibatalkan: 'Dibatalkan',
 };
+const JENIS_PELANGGARAN_LABEL = {
+  tab_switch: 'Pindah tab', blur_jendela: 'Jendela tidak fokus',
+  copy: 'Menyalin soal', paste: 'Menempel teks', klik_kanan: 'Klik kanan',
+  sesi_ganda: 'Sesi ganda (tab/device lain)', lainnya: 'Lainnya',
+};
+function ringkasPelanggaran(rincian) {
+  if (!rincian) return '';
+  return Object.entries(rincian)
+    .map(([jenis, jumlah]) => `${JENIS_PELANGGARAN_LABEL[jenis] || jenis}: ${jumlah}x`)
+    .join('\n');
+}
 
 export default function AdminPage() {
   const [pin, setPin] = useState('');
@@ -87,8 +98,28 @@ export default function AdminPage() {
     }
   };
 
-  const mengerjakan = useMemo(() => rows.filter(r => r.status === 'mengerjakan'), [rows]);
-  const selesai = useMemo(() => rows.filter(r => r.status !== 'mengerjakan'), [rows]);
+  const bukaKunci = async (sesiId, nama) => {
+    if (!confirm(`Buka kunci sesi milik "${nama}"? Hitungan pelanggarannya akan direset ke 0 dan siswa bisa melanjutkan tesnya lagi.`)) return;
+    setActionLoading(sesiId);
+    setActionMsg('');
+    try {
+      const res = await fetch('/api/admin/buka-kunci', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-panitia-pin': pin },
+        body: JSON.stringify({ sesiId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gagal membuka kunci.');
+      setActionMsg(`✓ Sesi "${nama}" dibuka kembali.`);
+      load(pin);
+    } catch (e) {
+      setActionMsg(`⚠️ ${e.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const mengerjakan = useMemo(() => rows.filter(r => r.status === 'mengerjakan' || r.status === 'terkunci_pelanggaran'), [rows]);
+  const selesai = useMemo(() => rows.filter(r => r.status !== 'mengerjakan' && r.status !== 'terkunci_pelanggaran'), [rows]);
 
   const cocok = (r, q) => {
     if (!q) return true;
@@ -214,25 +245,40 @@ export default function AdminPage() {
                       <td style={{ textAlign: 'center' }}>{r.jumlah_terjawab}</td>
                       <td>
                         {r.cheat_count > 0
-                          ? <span className="badge badge-red"><span className="dot" />{r.cheat_count}x pindah tab</span>
+                          ? <span className="badge badge-red" title={ringkasPelanggaran(r.pelanggaran_rincian)}>
+                              <span className="dot" />{r.cheat_count}x pelanggaran
+                            </span>
                           : <span className="badge badge-gray">-</span>}
                       </td>
                       <td className="muted">{fmtDurasi(detik)}</td>
                       <td>
-                        {ditinggal
-                          ? <span className="badge badge-gold"><span className="dot" />Kemungkinan ditinggal</span>
-                          : aktif
-                            ? <span className="badge badge-green"><span className="dot" />Aktif</span>
-                            : <span className="badge badge-gray"><span className="dot" />Idle</span>}
+                        {r.status === 'terkunci_pelanggaran'
+                          ? <span className="badge badge-red"><span className="dot" />🔒 Terkunci</span>
+                          : ditinggal
+                            ? <span className="badge badge-gold"><span className="dot" />Kemungkinan ditinggal</span>
+                            : aktif
+                              ? <span className="badge badge-green"><span className="dot" />Aktif</span>
+                              : <span className="badge badge-gray"><span className="dot" />Idle</span>}
                       </td>
                       <td>
-                        <button
-                          className="btn btn-danger btn-sm btn-auto"
-                          disabled={actionLoading === r.sesi_id}
-                          onClick={() => paksaSelesaikan(r.sesi_id, r.nama)}
-                        >
-                          {actionLoading === r.sesi_id ? '...' : 'Paksa Selesaikan'}
-                        </button>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {r.status === 'terkunci_pelanggaran' && (
+                            <button
+                              className="btn btn-navy btn-sm btn-auto"
+                              disabled={actionLoading === r.sesi_id}
+                              onClick={() => bukaKunci(r.sesi_id, r.nama)}
+                            >
+                              {actionLoading === r.sesi_id ? '...' : '🔓 Buka Kunci'}
+                            </button>
+                          )}
+                          <button
+                            className="btn btn-danger btn-sm btn-auto"
+                            disabled={actionLoading === r.sesi_id}
+                            onClick={() => paksaSelesaikan(r.sesi_id, r.nama)}
+                          >
+                            {actionLoading === r.sesi_id ? '...' : 'Paksa Selesaikan'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

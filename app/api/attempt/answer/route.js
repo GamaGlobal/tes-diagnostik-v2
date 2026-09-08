@@ -3,9 +3,23 @@
 // jadi index tidak bisa dipakai sebagai kunci jawaban yang stabil)
 // Body: { sesiId, kodeSoal, jawabanTeks }
 import { sql } from '../../../../lib/db';
+import { STATUS_TERKUNCI } from '../../../../lib/anti-curang';
 
 export async function POST(req) {
   const { sesiId, kodeSoal, jawabanTeks } = await req.json();
+
+  // Sebelumnya endpoint ini TIDAK mengecek status sesi sama sekali -- celah:
+  // sesi yang sudah dikunci karena pelanggaran (atau sudah selesai) masih
+  // bisa terus menerima jawaban baru selama sesiId-nya tahu. Sekarang jawaban
+  // hanya diterima kalau sesi masih berstatus 'mengerjakan'.
+  const [sesi] = await sql`select status from sesi_tes where id = ${sesiId}`;
+  if (!sesi) return Response.json({ error: 'Sesi tidak ditemukan' }, { status: 404 });
+  if (sesi.status !== 'mengerjakan') {
+    return Response.json(
+      { error: 'Sesi terkunci atau sudah selesai', locked: sesi.status === STATUS_TERKUNCI },
+      { status: 423 }
+    );
+  }
 
   const [soal] = await sql`select jawaban_kunci from bank_soal where kode_soal = ${kodeSoal}`;
   if (!soal) return Response.json({ error: 'Soal tidak ditemukan' }, { status: 404 });

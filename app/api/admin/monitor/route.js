@@ -24,7 +24,14 @@ export async function GET(req) {
         h.level_ist, h.persentase, h.estimasi_iq,
         h.riasec ->> 'topCode' as riasec_top,
         h.gaya_belajar ->> 'dominant' as gaya_dominant,
-        h.bakat ->> 'top' as bakat_top
+        h.bakat ->> 'top' as bakat_top,
+        (
+          select jsonb_object_agg(p.jenis, p.jumlah)
+          from (
+            select jenis, count(*)::int as jumlah
+            from pelanggaran where sesi_id = s.id group by jenis
+          ) p
+        ) as pelanggaran_rincian
       from sesi_tes s
       join siswa si on si.username = s.username
       left join hasil h on h.sesi_id = s.id

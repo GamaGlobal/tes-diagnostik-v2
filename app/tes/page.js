@@ -1,8 +1,20 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { RIASEC_LABELS, GAYA_LABELS, BAKAT_LABELS } from '../../lib/labels';
+import { AMBANG_PELANGGARAN } from '../../lib/anti-curang';
 
 const API = '/api/attempt';
+// SESSION_KEY sekarang HANYA menyimpan "penunjuk" (sesiId, jenjang, tabToken)
+// -- bukan progres (jawaban/bagian ke berapa/sisa waktu) seperti versi
+// sebelumnya. Progres asli selalu diambil ulang dari server tiap refresh
+// (lewat /api/attempt/resume) supaya tidak bisa diubah manual lewat DevTools
+// -> Application -> Session Storage untuk curang (mis. loncat ke bagian
+// terakhir, atau menambah sisa waktu).
+const SESSION_KEY = 'tes_ist_session_v1';
+
+function buatTabToken() {
+  try { return crypto.randomUUID(); } catch { return `tab_${Date.now()}_${Math.random().toString(36).slice(2)}`; }
+}
 
 // ---------- Render soal figural (parse JSON string -> gambar SVG) ----------
 function polygonPoints(sides, cx, cy, r, rotDeg) {
@@ -62,6 +74,15 @@ const SECTION_ICON = {
   memori: '🧠', likert: '📋',
 };
 
+function PelanggaranBanner({ banner }) {
+  if (!banner) return null;
+  return (
+    <div className={`alert ${banner.tone === 'warn' ? 'alert-error' : 'alert-info'}`} style={{ marginBottom: 14 }}>
+      <span>{banner.text}</span>
+    </div>
+  );
+}
+
 function BarRow({ label, value, max = 100, suffix = '%' }) {
   const pct = Math.max(0, Math.min(100, max ? (value / max) * 100 : 0));
   return (
@@ -85,10 +106,114 @@ export default function TesPage() {
   const [sisaWaktu, setSisaWaktu] = useState(0);
   const [hasilAkhir, setHasilAkhir] = useState(null);
   const [showPw, setShowPw] = useState(false);
-  const cheatCountRef = useRef(0);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [banner, setBanner] = useState(null); // {tone:'warn'|'info', text} — notifikasi pelanggaran/sesi ganda
   const sesiIdRef = useRef(null);
+  const tabTokenRef = useRef(null);
 
   const section = sections[sectionIdx];
+
+  // ---------- terapkan hasil login/resume ke state layar ----------
+  // Dipakai baik oleh login pakai password (handleLogin) MAUPUN pemulihan
+  // sesi saat refresh (lihat useEffect di bawah), supaya keduanya konsisten:
+  // kalau siswa sedang di TENGAH fase berwaktu (menghafal / mengerjakan),
+  // langsung diarahkan ke LAYAR YANG SAMA dengan sisa waktu yang benar —
+  // bukan mundur ke welcome/intro yang berarti buang-buang sisa waktu bagian
+  // itu secara percuma (deadline-nya sudah absolut di server, jalan terus
+  // walau siswa sedang di layar lain).
+  const terapkanStatus = useCallback((jenjang, tahapKe, tahapFase, sisaDetik, jawabanTersimpan, sections) => {
+    const jawabanAwal = {};
+    (jawabanTersimpan || []).forEach(j => { jawabanAwal[j.kode_soal] = j.jawaban_teks; });
+    setJawabanTerpilih(jawabanAwal);
+    setForm(f => ({ ...f, jenjang }));
+
+    const idxAman = Math.min(tahapKe || 0, sections.length - 1);
+    setSectionIdx(idxAman);
+
+    if ((tahapFase === 'mengerjakan' || tahapFase === 'memorize') && sisaDetik != null && sisaDetik > 0) {
+      setSisaWaktu(sisaDetik);
+      setTahap(tahapFase);
+    } else if (tahapFase === 'mengerjakan' || tahapFase === 'memorize') {
+      // waktu bagian ini sudah habis selagi siswa tidak ada (mis. baru buka
+      // lagi browsernya 10 menit kemudian) -> jangan macet di 0 detik,
+      // langsung lanjut seperti waktu habis normal
+      setSisaWaktu(0);
+      setTahap(tahapFase);
+    } else {
+      setTahap('welcome');
+    }
+  }, []);
+
+  // ---------- pulihkan sesi dari server kalau halaman di-refresh ----------
+  // sessionStorage cuma dipakai sebagai "penunjuk" (sesiId) supaya tidak
+  // perlu login pakai password lagi -- progres yang SEBENARNYA (jawaban,
+  // bagian ke berapa, sisa waktu) selalu diambil ULANG dari
+  // /api/attempt/resume, bukan dipercaya dari sessionStorage itu sendiri
+  // (yang bisa saja diubah manual lewat DevTools untuk curang).
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        const saved = raw ? JSON.parse(raw) : null;
+        if (saved?.sesiId) {
+          tabTokenRef.current = saved.tabToken || buatTabToken();
+          const res = await fetch(`${API}/resume?sesiId=${saved.sesiId}`);
+          const data = await res.json();
+          if (data.found) {
+            sesiIdRef.current = saved.sesiId;
+            if (data.locked) {
+              // sesi dikunci karena pelanggaran -> tetap di layar terkunci,
+              // jangan buka soalnya lagi walau di-refresh berkali-kali
+              setSesi({ nama: data.nama });
+              setTahap('terkunci');
+            } else if (data.selesai) {
+              setSesi({ nama: data.nama });
+              setHasilAkhir(data.hasil);
+              setTahap('selesai');
+            } else {
+              setSesi({ nama: data.nama, kelas: data.kelas, sekolah: data.sekolah });
+              const soalRes = await fetch(`${API}/soal?jenjang=${data.jenjang}`);
+              const soalData = await soalRes.json();
+              setSections(soalData.sections);
+              terapkanStatus(data.jenjang, data.tahapKe, data.tahapFase, data.sisaDetik, data.jawabanTersimpan, soalData.sections);
+            }
+          } else {
+            try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+          }
+        }
+      } catch {
+        // sessionStorage tidak tersedia / gagal fetch -> abaikan, tetap di layar login
+      }
+      setCheckingSession(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------- simpan PENUNJUK sesi (bukan progresnya) ke sessionStorage ----------
+  useEffect(() => {
+    if (!sesiIdRef.current || checkingSession) return;
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+        sesiId: sesiIdRef.current, tabToken: tabTokenRef.current,
+      }));
+    } catch {
+      // penuh / diblokir browser -> abaikan, autosave per-jawaban di server tetap jalan
+    }
+  }, [sesi, checkingSession]);
+
+  function gantiAkun() {
+    try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+    sesiIdRef.current = null;
+    tabTokenRef.current = null;
+    setSesi(null);
+    setSections([]);
+    setSectionIdx(0);
+    setJawabanTerpilih({});
+    setHasilAkhir(null);
+    setBanner(null);
+    setForm({ username: '', password: '', jenjang: 'smp' });
+    setTahap('login');
+  }
 
   // ---------- login ----------
   async function handleLogin(e) {
@@ -103,18 +228,23 @@ export default function TesPage() {
       const data = await res.json();
       if (!res.ok) { setLoginError(data.error || 'Gagal login'); return; }
       sesiIdRef.current = data.sesiId;
-      setSesi(data);
+      tabTokenRef.current = buatTabToken();
 
+      if (data.locked) {
+        // sesi milik akun ini sudah dikunci karena pelanggaran berulang ->
+        // langsung tampilkan layar terkunci, jangan buka soal sama sekali
+        // (mencegah bypass kunci dengan logout lalu login lagi)
+        setSesi({ nama: data.nama });
+        setTahap('terkunci');
+        return;
+      }
+
+      setSesi(data);
       const soalRes = await fetch(`${API}/soal?jenjang=${form.jenjang}`);
       const soalData = await soalRes.json();
       setSections(soalData.sections);
 
-      const jawabanAwal = {};
-      (data.jawabanTersimpan || []).forEach(j => { jawabanAwal[j.kode_soal] = j.jawaban_teks; });
-      setJawabanTerpilih(jawabanAwal);
-
-      setSectionIdx(Math.min(data.tahapKe || 0, soalData.sections.length - 1));
-      setTahap('intro');
+      terapkanStatus(form.jenjang, data.tahapKe, data.tahapFase, data.sisaDetik, data.jawabanTersimpan, soalData.sections);
     } catch {
       setLoginError('Gagal terhubung ke server. Coba lagi.');
     } finally {
@@ -123,56 +253,172 @@ export default function TesPage() {
   }
 
   // ---------- heartbeat ----------
+  // Selain jadi denyut "masih aktif" untuk Live Monitor, ini juga dipakai
+  // untuk RESYNC sisa waktu ke server tiap 20 detik (jaga-jaga kalau timer
+  // di klien ngaret / jam sistem device siswa diutak-atik) dan mendeteksi
+  // apakah sesi yang sama sedang aktif di tab/perangkat lain.
   useEffect(() => {
-    if (tahap === 'login' || tahap === 'selesai') return;
-    const iv = setInterval(() => {
-      fetch(`${API}/heartbeat`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sesiId: sesiIdRef.current, tahapKe: sectionIdx, cheatCount: cheatCountRef.current }),
-      }).catch(() => {}); // aman diabaikan -> jawaban tetap tersimpan per-soal, tidak bergantung heartbeat
+    if (tahap === 'login' || tahap === 'selesai' || tahap === 'welcome') return;
+    const iv = setInterval(async () => {
+      try {
+        const res = await fetch(`${API}/heartbeat`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sesiId: sesiIdRef.current, tahapKe: sectionIdx, tabToken: tabTokenRef.current }),
+        });
+        const data = await res.json();
+        if (data.locked) {
+          // dikunci oleh TAB LAIN (mis. pelanggaran tercatat lewat tab lain
+          // dari sesi yang sama) -> tab ini pun harus ikut berhenti seketika
+          setTahap('terkunci');
+          return;
+        }
+        if (data.status && data.status !== 'mengerjakan') {
+          // sesi sudah diakhiri lewat jalur lain (mis. "Paksa Selesaikan" oleh
+          // panitia) selagi tab ini masih terbuka -> tarik hasilnya sekalian
+          try {
+            const r = await fetch(`${API}/resume?sesiId=${sesiIdRef.current}`);
+            const rd = await r.json();
+            if (rd.selesai) { setHasilAkhir(rd.hasil); setTahap('selesai'); return; }
+          } catch {}
+        }
+        if (data.activeElsewhere) {
+          setBanner({ tone: 'warn', text: '⚠️ Sesi ini terdeteksi juga sedang aktif di tab/perangkat lain.' });
+        }
+        if ((tahap === 'mengerjakan' || tahap === 'memorize') && typeof data.sisaDetik === 'number') {
+          // hanya koreksi kalau meleset cukup jauh (>2 detik), supaya
+          // tampilan tidak "kedutan" karena selisih pembulatan biasa
+          setSisaWaktu(s => Math.abs(s - data.sisaDetik) > 2 ? data.sisaDetik : s);
+        }
+      } catch {
+        // gagal terkirim -> aman diabaikan, jawaban tetap tersimpan per-soal
+        // dan sisa waktu tetap dihitung ulang dari server saat resume
+      }
     }, 20000);
     return () => clearInterval(iv);
   }, [tahap, sectionIdx]);
 
-  // ---------- deteksi pindah tab (anti-cheat sederhana) ----------
+  // ---------- anti-curang: catat kejadian LANGSUNG saat terjadi ----------
+  // Tiap kejadian dikirim seketika ke /api/attempt/pelanggaran (bukan
+  // ditumpuk dulu di klien) supaya tidak hilang kalau tabnya keburu ditutup,
+  // dan supaya panitia bisa lihat waktu + jenis tiap kejadian, bukan cuma
+  // satu angka total.
+  //
+  // AMBANG_PELANGGARAN (3) pelanggaran pertama = PERINGATAN saja, dengan
+  // hitungan yang ditampilkan ke siswa ("Peringatan 2 dari 3"). Begitu server
+  // bilang locked:true (pelanggaran ke-4), sesi langsung dikunci di layar ini
+  // juga — tidak perlu menunggu heartbeat berikutnya.
+  const laporPelanggaran = useCallback(async (jenis) => {
+    if (!sesiIdRef.current) return;
+    try {
+      const res = await fetch(`${API}/pelanggaran`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sesiId: sesiIdRef.current, jenis }),
+      });
+      const data = await res.json();
+      if (data.locked) {
+        setTahap('terkunci');
+        return;
+      }
+      const ambang = data.ambang ?? AMBANG_PELANGGARAN;
+      if (typeof data.cheatCount === 'number') {
+        setBanner({
+          tone: 'warn',
+          text: `⚠️ Peringatan ${data.cheatCount} dari ${ambang}: aktivitas tidak wajar terdeteksi & tercatat. Tes akan dikunci otomatis setelah ${ambang} peringatan.`,
+        });
+      }
+    } catch {
+      // gagal terkirim ke server -> tetap kasih tahu di layar supaya siswa
+      // tidak mengulang tindakan yang sama karena mengira tidak terpantau
+      setBanner({ tone: 'warn', text: '⚠️ Aktivitas tidak wajar terdeteksi (gagal lapor ke server, coba periksa koneksi).' });
+    }
+  }, []);
+
   useEffect(() => {
-    function onVis() { if (document.hidden && tahap === 'mengerjakan') cheatCountRef.current += 1; }
+    const sedangTes = tahap === 'mengerjakan' || tahap === 'memorize';
+    function onVis() { if (document.hidden && sedangTes) laporPelanggaran('tab_switch'); }
+    function onBlur() { if (sedangTes) laporPelanggaran('blur_jendela'); }
+    // copy/paste/klik-kanan langsung DIBLOK (bukan cuma dicatat) selama
+    // mengerjakan/menghafal — mengurangi godaan menyalin soal atau menempel
+    // jawaban dari sumber lain, sekaligus tetap tercatat sebagai pelanggaran
+    function onCopy(e) { if (sedangTes) { e.preventDefault(); laporPelanggaran('copy'); } }
+    function onPaste(e) { if (sedangTes) { e.preventDefault(); laporPelanggaran('paste'); } }
+    function onContext(e) { if (sedangTes) { e.preventDefault(); laporPelanggaran('klik_kanan'); } }
     document.addEventListener('visibilitychange', onVis);
-    return () => document.removeEventListener('visibilitychange', onVis);
-  }, [tahap]);
+    window.addEventListener('blur', onBlur);
+    document.addEventListener('copy', onCopy);
+    document.addEventListener('paste', onPaste);
+    document.addEventListener('contextmenu', onContext);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('copy', onCopy);
+      document.removeEventListener('paste', onPaste);
+      document.removeEventListener('contextmenu', onContext);
+    };
+  }, [tahap, laporPelanggaran]);
+
+  // ---------- banner notifikasi otomatis hilang ----------
+  useEffect(() => {
+    if (!banner) return;
+    const t = setTimeout(() => setBanner(null), 6000);
+    return () => clearTimeout(t);
+  }, [banner]);
 
   // ---------- timer per bagian ----------
+  // sisaWaktu di sini cuma untuk TAMPILAN yang mulus tiap detik — sumber
+  // kebenarannya tetap tahap_deadline_at di server (diminta ulang saat
+  // resume, dan dikoreksi tiap heartbeat, lihat efek heartbeat di atas).
   useEffect(() => {
     if (tahap !== 'mengerjakan' && tahap !== 'memorize') return;
-    if (sisaWaktu <= 0) { lanjutBagian(); return; }
+    if (sisaWaktu <= 0) {
+      // Bug lama: waktu menghafal habis -> lanjutBagian() melompati fase
+      // soal bagian ini sama sekali. Sekarang: waktu menghafal habis ->
+      // lanjut ke fase MENGERJAKAN SOAL bagian yang sama (bukan loncat
+      // bagian), sama seperti kalau siswa klik "Sudah Hafal" sendiri.
+      if (tahap === 'memorize') mulaiFaseBerwaktu('mengerjakan'); else lanjutBagian();
+      return;
+    }
     const t = setTimeout(() => setSisaWaktu(s => s - 1), 1000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sisaWaktu, tahap]);
 
-  function mulaiBagian() {
-    if (section.tipe === 'memori') {
-      setSisaWaktu(section.memorizeDurasi);
-      setTahap('memorize');
-    } else {
-      setSisaWaktu(section.durasi);
-      setTahap('mengerjakan');
+  // ---------- mulai fase berwaktu (menghafal ATAU mengerjakan soal) ----------
+  // Deadline-nya diminta & dicatat di SERVER (bukan cuma setSisaWaktu di
+  // klien) supaya kalau nanti halaman ini di-refresh, sisa waktunya dihitung
+  // ulang dari deadline itu -- bukan dapat waktu penuh baru.
+  const mulaiFaseBerwaktu = useCallback(async (fase) => {
+    const durasiFallback = fase === 'memorize' ? section.memorizeDurasi : section.durasi;
+    setSisaWaktu(durasiFallback); // tampilan langsung jalan sambil menunggu respons server
+    setTahap(fase);
+    try {
+      const res = await fetch(`${API}/mulai-bagian`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sesiId: sesiIdRef.current, tahapKe: sectionIdx, fase }),
+      });
+      if (res.status === 423) { setTahap('terkunci'); return; } // sesi keburu dikunci/selesai
+      const data = await res.json();
+      if (typeof data.sisaDetik === 'number') setSisaWaktu(data.sisaDetik);
+    } catch {
+      // gagal terkirim -> tetap pakai durasi default di atas; heartbeat
+      // berikutnya akan mencoba resync begitu koneksi kembali
     }
+  }, [section, sectionIdx]);
+
+  function mulaiBagian() {
+    mulaiFaseBerwaktu(section.tipe === 'memori' ? 'memorize' : 'mengerjakan');
   }
 
   function pilihJawaban(kodeSoal, teks) {
     setJawabanTerpilih(prev => ({ ...prev, [kodeSoal]: teks }));
-    fetch(`${API}/answer`, {
+    const kirim = () => fetch(`${API}/answer`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sesiId: sesiIdRef.current, kodeSoal, jawabanTeks: teks }),
-    }).catch(() => {
+    }).then(res => { if (res.status === 423) setTahap('terkunci'); return res; });
+
+    kirim().catch(() => {
       // gagal kirim -> coba lagi sekali setelah 3 detik (jaring pengaman sederhana)
-      setTimeout(() => {
-        fetch(`${API}/answer`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sesiId: sesiIdRef.current, kodeSoal, jawabanTeks: teks }),
-        }).catch(() => {});
-      }, 3000);
+      setTimeout(() => { kirim().catch(() => {}); }, 3000);
     });
   }
 
@@ -193,6 +439,10 @@ export default function TesPage() {
   }, [sectionIdx, sections.length]);
 
   // ================= RENDER =================
+  if (checkingSession) {
+    return <main className="page-wrap"><div className="shell" style={{ maxWidth: 400 }} /></main>;
+  }
+
   if (tahap === 'login') {
     return (
       <main className="login-wrap">
@@ -275,6 +525,60 @@ export default function TesPage() {
     );
   }
 
+  if (tahap === 'welcome') {
+    const sudahMulai = sectionIdx > 0 || Object.keys(jawabanTerpilih).length > 0;
+    return (
+      <main className="page-wrap">
+        <div className="shell" style={{ maxWidth: 460 }}>
+          <div className="card screen" style={{ textAlign: 'center' }}>
+            <div
+              style={{
+                width: 60, height: 60, borderRadius: '50%', background: 'var(--sky)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 26, margin: '0 auto 14px',
+              }}
+            >
+              🎓
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--t2)' }}>Selamat datang,</p>
+            <h1 style={{ fontFamily: 'var(--ff-h)', fontSize: 24, marginTop: 2 }}>{sesi?.nama}</h1>
+            <div className="tag-row" style={{ justifyContent: 'center', marginTop: 10 }}>
+              {sesi?.kelas && <span className="tag">🏷 {sesi.kelas}</span>}
+              <span className="tag">🏫 {sesi?.sekolah}</span>
+              <span className="tag">📚 {form.jenjang?.toUpperCase()}</span>
+            </div>
+
+            {sudahMulai && sections.length > 0 && (
+              <div style={{ marginTop: 20, textAlign: 'left' }}>
+                <div className="alert alert-info">
+                  ↩️ Progres sebelumnya ditemukan — Anda akan melanjutkan dari <strong>Bagian {sectionIdx + 1} dari {sections.length}</strong>. Jawaban yang sudah dipilih tetap tersimpan.
+                </div>
+              </div>
+            )}
+
+            <button
+              className="btn btn-primary"
+              style={{ marginTop: 18 }}
+              onClick={() => setTahap('intro')}
+            >
+              {sudahMulai ? 'Lanjutkan Tes →' : 'Mulai Tes →'}
+            </button>
+
+            <button
+              onClick={gantiAkun}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--t2)', fontSize: 12.5, marginTop: 14, textDecoration: 'underline',
+              }}
+            >
+              Bukan {sesi?.nama}? Keluar
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   if (!section) {
     return (
       <main className="page-wrap"><div className="shell"><div className="card" style={{ textAlign: 'center' }}>Memuat soal...</div></div></main>
@@ -324,6 +628,7 @@ export default function TesPage() {
       <main className="page-wrap">
         <div className="shell">
           <div className="card screen">
+            <PelanggaranBanner banner={banner} />
             <h2 style={{ fontFamily: 'var(--ff-h)', fontSize: 20, marginBottom: 4 }}>🧠 {section.title} — Hafalkan</h2>
             <p style={{ color: 'var(--t2)', fontSize: 13.5, marginTop: 8 }}>Sisa waktu menghafal</p>
             <span className={`timer-badge ${sisaWaktu <= 20 ? 'timer-danger' : ''}`} style={{ marginTop: 6 }}>
@@ -339,7 +644,7 @@ export default function TesPage() {
               </tbody>
             </table>
 
-            <button className="btn btn-primary" onClick={() => { setSisaWaktu(section.durasi); setTahap('mengerjakan'); }}>
+            <button className="btn btn-primary" onClick={() => mulaiFaseBerwaktu('mengerjakan')}>
               Sudah Hafal, Mulai Soal →
             </button>
           </div>
@@ -354,6 +659,7 @@ export default function TesPage() {
       <main className="page-wrap">
         <div className="shell">
           <div className="card screen">
+            <PelanggaranBanner banner={banner} />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
               <div>
                 <span className="step-pill">Bagian {sectionIdx + 1} dari {sections.length}</span>
@@ -400,6 +706,31 @@ export default function TesPage() {
 
             <button className="btn btn-primary" onClick={lanjutBagian} style={{ marginTop: 16 }}>
               {sectionIdx >= sections.length - 1 ? '✅ Selesaikan Tes' : 'Lanjut ke Bagian Berikutnya →'}
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (tahap === 'terkunci') {
+    return (
+      <main className="page-wrap">
+        <div className="shell" style={{ maxWidth: 460 }}>
+          <div className="card screen" style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 42 }}>🔒</div>
+            <h1 style={{ fontFamily: 'var(--ff-h)', fontSize: 20, marginTop: 10 }}>Tes Dikunci Sistem</h1>
+            <p style={{ color: 'var(--t2)', fontSize: 14, marginTop: 10, lineHeight: 1.6 }}>
+              Halo <strong>{sesi?.nama || ''}</strong>, tes ini dikunci otomatis karena sistem
+              mendeteksi pelanggaran berulang selama pengerjaan (pindah tab, jendela tidak
+              fokus, menyalin/menempel teks, atau klik kanan) melebihi {AMBANG_PELANGGARAN} kali
+              peringatan. Jawaban yang sudah tersimpan tidak hilang.
+            </p>
+            <div className="alert alert-error" style={{ marginTop: 16, textAlign: 'left' }}>
+              <span>Silakan hubungi panitia pengawas untuk membuka kembali atau menyelesaikan tes ini.</span>
+            </div>
+            <button className="btn btn-outline btn-auto" style={{ marginTop: 16 }} onClick={gantiAkun}>
+              Keluar
             </button>
           </div>
         </div>
@@ -487,6 +818,17 @@ export default function TesPage() {
                 )}
               </>
             )}
+
+            <div className="divider" />
+            <button
+              onClick={gantiAkun}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer', display: 'block',
+                margin: '0 auto', color: 'var(--t2)', fontSize: 12.5, textDecoration: 'underline',
+              }}
+            >
+              Selesai — keluar untuk siswa berikutnya
+            </button>
           </div>
         </div>
       </main>

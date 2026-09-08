@@ -27,6 +27,9 @@ export default function Home() {
             <a href="/admin" style={{ textDecoration: 'none', flex: '1 1 200px' }}>
               <button className="btn btn-outline">📊 Panel Panitia</button>
             </a>
+            <a href="/hasil" style={{ textDecoration: 'none', flex: '1 1 200px' }}>
+              <button className="btn btn-outline">📄 Hasil Tes Diagnostik</button>
+            </a>
           </div>
         </div>
 
