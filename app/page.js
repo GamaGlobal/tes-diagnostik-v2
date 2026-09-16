@@ -33,6 +33,21 @@ export default function Home() {
           </div>
         </div>
 
+        <div className="card" style={{ marginTop: 16, textAlign: 'center' }}>
+          <p style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 10 }}>
+            Link khusus per jenjang (jenjang otomatis terkunci, siswa tidak perlu memilih sendiri) —
+            bagikan link ini ke kelas yang sesuai:
+          </p>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <a href="/tes?jenjang=smp" style={{ textDecoration: 'none', flex: '1 1 180px' }}>
+              <button className="btn btn-outline">🔒 Link Tes SMP</button>
+            </a>
+            <a href="/tes?jenjang=sma" style={{ textDecoration: 'none', flex: '1 1 180px' }}>
+              <button className="btn btn-outline">🔒 Link Tes SMA</button>
+            </a>
+          </div>
+        </div>
+
         <p className="hint" style={{ marginTop: 18 }}>
           Halaman lama masih tersedia di <strong>/legacy</strong> bila dibutuhkan.
         </p>

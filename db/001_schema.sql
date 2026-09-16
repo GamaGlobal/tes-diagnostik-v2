@@ -9,7 +9,7 @@
 create extension if not exists pgcrypto;
 
 -- Akun siswa (mirror dari AKUN_SISWA_*.xlsx)
-create table siswa (
+create table if not exists siswa (
   username     text primary key,
   password     text not null,        -- bcrypt hash
   nama         text not null,
@@ -21,7 +21,7 @@ create table siswa (
 -- Bank soal (hasil extract dari index.html — lihat bank-soal/README-bank-soal.md)
 -- jawaban_kunci disimpan sebagai TEKS ISI PILIHAN, bukan index — karena urutan
 -- pilihan diacak per-sesi (shuffledMC() di index.html), index tidak stabil.
-create table bank_soal (
+create table if not exists bank_soal (
   kode_soal          text primary key,      -- 'SE_smp_1', 'FA_sma_7', 'WU_semua_3', dst.
   kategori           text not null,         -- SE/WA/AN/GE/RA/ZR/FA/WU/ME/BAKAT/RIASEC/GAYA
   sub_kategori       text,                  -- BAKAT: MIPA/IPS/BHS/INF/VOK; RIASEC: R/I/A/S/E/C; GAYA: V/A/K
@@ -34,10 +34,10 @@ create table bank_soal (
   meta               jsonb,                 -- data render tambahan (seq figural, net kubus, pasangan ME, dst.)
   item_bank_version  text not null default '2026-08-audit-v2'
 );
-create index idx_bank_kategori on bank_soal(kategori, jenjang);
+create index if not exists idx_bank_kategori on bank_soal(kategori, jenjang);
 
 -- Satu baris = satu kali siswa mengambil tes
-create table sesi_tes (
+create table if not exists sesi_tes (
   id                 uuid primary key default gen_random_uuid(),
   username           text not null references siswa(username),
   jenjang            text not null,        -- 'smp' | 'sma'
@@ -52,11 +52,11 @@ create table sesi_tes (
   selesai_at         timestamptz,
   finalized_by       text                  -- null = siswa sendiri; diisi PIN panitia kalau dipaksa
 );
-create index idx_sesi_status on sesi_tes(status);
-create index idx_sesi_username on sesi_tes(username);
+create index if not exists idx_sesi_status on sesi_tes(status);
+create index if not exists idx_sesi_username on sesi_tes(username);
 
 -- JAWABAN — diautosave satu per satu, segera setelah siswa memilih.
-create table jawaban (
+create table if not exists jawaban (
   sesi_id       uuid not null references sesi_tes(id) on delete cascade,
   kode_soal     text not null references bank_soal(kode_soal),
   jawaban_teks  text not null,   -- ISI pilihan yg dipilih (bukan index)
@@ -65,7 +65,7 @@ create table jawaban (
   primary key (sesi_id, kode_soal)
 );
 
-create table pelanggaran (
+create table if not exists pelanggaran (
   id         bigserial primary key,
   sesi_id    uuid not null references sesi_tes(id) on delete cascade,
   jenis      text not null,      -- mis. 'tab_switch'
@@ -73,7 +73,7 @@ create table pelanggaran (
 );
 
 -- Hasil akhir — selalu dihitung ulang dari `jawaban` (lihat lib/scoring.js)
-create table hasil (
+create table if not exists hasil (
   sesi_id         uuid primary key references sesi_tes(id) on delete cascade,
   level_ist       text,          -- klasifikasi IQ ("Rata-rata", "Superior", dst.)
   subskor         jsonb,         -- {"SE":4,"WA":3,...} jumlah benar per kategori
@@ -89,7 +89,7 @@ create table hasil (
 );
 
 -- Live Monitor — satu sumber data langsung dari tabel, bukan sheet terpisah.
-create view v_live_monitor as
+create or replace view v_live_monitor as
 select
   s.id as sesi_id, si.username, si.nama, si.kelas, si.sekolah,
   s.status, s.tahap_ke, s.total_tahap, s.cheat_count,

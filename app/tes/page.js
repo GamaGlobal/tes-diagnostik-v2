@@ -97,6 +97,18 @@ function BarRow({ label, value, max = 100, suffix = '%' }) {
 export default function TesPage() {
   const [tahap, setTahap] = useState('login'); // login | intro | mengerjakan | memorize | pindah | selesai
   const [form, setForm] = useState({ username: '', password: '', jenjang: 'smp' });
+  // Jenjang bisa dikunci lewat link, mis. /tes?jenjang=sma — dibagikan panitia
+  // per kelas supaya siswa tidak salah pilih jenjang sendiri di dropdown.
+  // Dibaca langsung dari URL (bukan next/navigation) biar halaman client-only
+  // ini tidak perlu Suspense boundary tambahan.
+  const [jenjangTerkunci, setJenjangTerkunci] = useState(false);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('jenjang');
+    if (q === 'smp' || q === 'sma') {
+      setForm(f => ({ ...f, jenjang: q }));
+      setJenjangTerkunci(true);
+    }
+  }, []);
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [sesi, setSesi] = useState(null); // {sesiId, nama, kelas, sekolah}
@@ -500,14 +512,24 @@ export default function TesPage() {
 
             <div className="field">
               <label className="field-label">Jenjang</label>
-              <select
-                className="input"
-                value={form.jenjang}
-                onChange={e => setForm(f => ({ ...f, jenjang: e.target.value }))}
-              >
-                <option value="smp">SMP</option>
-                <option value="sma">SMA</option>
-              </select>
+              {jenjangTerkunci ? (
+                <div
+                  className="input"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg2, #f2f4f7)', cursor: 'not-allowed' }}
+                >
+                  🔒 {form.jenjang.toUpperCase()}
+                  <span style={{ fontSize: 12, color: 'var(--t2)' }}>(diset lewat link panitia)</span>
+                </div>
+              ) : (
+                <select
+                  className="input"
+                  value={form.jenjang}
+                  onChange={e => setForm(f => ({ ...f, jenjang: e.target.value }))}
+                >
+                  <option value="smp">SMP</option>
+                  <option value="sma">SMA</option>
+                </select>
+              )}
             </div>
 
             <button className="btn btn-primary" disabled={loginLoading} style={{ marginTop: 6 }}>
