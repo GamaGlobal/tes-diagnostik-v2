@@ -33,7 +33,7 @@ export async function GET(req) {
     const rows = semua
       ? await sql`
           select
-            s.id as sesi_id, si.nama, si.kelas, si.sekolah, s.jenjang,
+            s.id as sesi_id, si.nis, si.nama, si.kelas, si.sekolah, s.jenjang,
             case s.status
               when 'selesai_terkirim' then 'Selesai (siswa sendiri)'
               when 'selesai_paksa_panitia' then 'Diselesaikan Panitia'
@@ -57,7 +57,7 @@ export async function GET(req) {
         `
       : await sql`
           select
-            s.id as sesi_id, si.nama, si.kelas, si.sekolah, s.jenjang,
+            s.id as sesi_id, si.nis, si.nama, si.kelas, si.sekolah, s.jenjang,
             case s.status
               when 'selesai_terkirim' then 'Selesai (siswa sendiri)'
               when 'selesai_paksa_panitia' then 'Diselesaikan Panitia'

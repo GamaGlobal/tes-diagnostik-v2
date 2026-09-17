@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 
+import { barisRekapKeSheet, headerRekapSheet } from '../../lib/rekap-kolom';
+
 const AMBANG_AKTIF_DETIK = 90;   // heartbeat dikirim tiap 20 detik -> >90 detik dianggap idle
 const AMBANG_DITINGGAL_MENIT = 5; // > 5 menit tanpa heartbeat -> kemungkinan ditinggal
 
@@ -92,7 +94,7 @@ function siapkanBarisJawaban(rows) {
 // (level IQ / persentase / RIASEC / gaya / bakat) supaya panitia bisa
 // langsung menganalisis dari satu file tanpa buka panel lain.
 const KOLOM_JAWABAN_MENTAH = [
-  { key: 'nama', label: 'Nama' }, { key: 'kelas', label: 'Kelas' }, { key: 'sekolah', label: 'Sekolah' },
+  { key: 'nama', label: 'Nama' }, { key: 'nis', label: 'NIS' }, { key: 'kelas', label: 'Kelas' }, { key: 'sekolah', label: 'Sekolah' },
   { key: 'jenjang', label: 'Jenjang' }, { key: 'status_sesi', label: 'Status Sesi' },
   { key: 'level_ist', label: 'Level IQ' }, { key: 'skor_ist_teks', label: 'Skor IST' },
   { key: 'estimasi_iq', label: 'Estimasi IQ' }, { key: 'lengkap_teks', label: 'Semua Soal Terjawab?' },
@@ -104,6 +106,55 @@ const KOLOM_JAWABAN_MENTAH = [
   { key: 'jawaban_kunci', label: 'Kunci Jawaban' }, { key: 'jawaban_teks', label: 'Jawaban Siswa' },
   { key: 'status_jawaban', label: 'Status Jawaban' }, { key: 'dijawab_at', label: 'Dijawab Pada' },
 ];
+
+// ── util EXCEL (.xlsx) ────────────────────────────────────────────────
+// SheetJS di-import DINAMIS (hanya saat tombol unduh ditekan) supaya tidak
+// ikut menggemukkan bundel halaman /admin yang dipakai sambil memantau tes.
+async function unduhWorkbook(namaFile, sheets) {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.utils.book_new();
+  for (const { nama, rows, header } of sheets) {
+    const ws = XLSX.utils.json_to_sheet(rows, header ? { header } : undefined);
+    // lebar kolom sekadarnya biar tidak semua mepet
+    ws['!cols'] = (header || Object.keys(rows[0] || {})).map(h => ({
+      wch: Math.min(40, Math.max(10, String(h).length + 4)),
+    }));
+    ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+    XLSX.utils.book_append_sheet(wb, ws, nama.slice(0, 31));
+  }
+  XLSX.writeFile(wb, namaFile);
+}
+
+// Statistik per butir soal, dihitung dari baris jawaban mentah.
+// p (%) = proporsi peserta yang menjawab benar: makin besar = makin mudah.
+// Item likert (RIASEC/GAYA) tidak punya benar/salah, jadi dilewati.
+function hitungAnalisisButir(rows) {
+  const peta = new Map();
+  for (const r of rows) {
+    if (r.benar === null || r.benar === undefined) continue;
+    const k = r.kode_soal;
+    if (!peta.has(k)) {
+      peta.set(k, {
+        'Kode Soal': k, 'Kategori': r.kategori, 'Sub Kategori': r.sub_kategori || '-',
+        'Jenjang': r.jenjang, 'No Soal': r.urutan, 'Teks Soal': r.pertanyaan,
+        'Kunci Jawaban': r.jawaban_kunci, 'Dijawab': 0, 'Benar': 0,
+      });
+    }
+    const it = peta.get(k);
+    it['Dijawab'] += 1;
+    if (r.benar === true) it['Benar'] += 1;
+  }
+  return [...peta.values()].map(it => {
+    const p = it['Dijawab'] ? (it['Benar'] / it['Dijawab']) : null;
+    return {
+      ...it,
+      'p (%)': p === null ? '-' : Math.round(p * 1000) / 10,
+      'Catatan Butir': p === null ? 'belum ada data'
+        : p >= 0.85 ? 'terlalu mudah' : p <= 0.20 ? 'terlalu sulit' : 'layak',
+    };
+  }).sort((a, b) => String(a['Kategori']).localeCompare(String(b['Kategori'])) || a['No Soal'] - b['No Soal']);
+}
+
 
 export default function AdminPage() {
   const [pin, setPin] = useState('');
@@ -251,6 +302,54 @@ export default function AdminPage() {
     }
   };
 
+  // Satu file Excel berisi SEMUA data yang dibutuhkan panitia untuk analisis:
+  //   Sheet "Rekap Hasil"    -> 1 baris = 1 peserta, kolomnya SAMA PERSIS dengan
+  //                             sheet "Hasil Tes Diagnostik" di sistem lama
+  //                             (Apps Script/Code.gs), jadi dua file itu tinggal
+  //                             ditumpuk kalau mau dianalisis bareng.
+  //   Sheet "Jawaban Mentah" -> 1 baris = 1 jawaban, lengkap dengan teks soal & kunci.
+  //   Sheet "Analisis Butir" -> tingkat kesulitan tiap soal (audit bank soal).
+  const unduhExcelLengkap = async () => {
+    setActionLoading('__excel__');
+    setActionMsg('');
+    try {
+      const headers = { 'x-panitia-pin': pin };
+      const [resRekap, resJawaban] = await Promise.all([
+        fetch('/api/admin/rekap?termasukBelumSelesai=1', { headers }),
+        fetch('/api/admin/jawaban-mentah?semua=1', { headers }),
+      ]);
+      const dataRekap = await resJson(resRekap);
+      const dataJawaban = await resJson(resJawaban);
+      if (!resRekap.ok) throw new Error(dataRekap.error || 'Gagal mengambil rekap.');
+      if (!resJawaban.ok) throw new Error(dataJawaban.error || 'Gagal mengambil jawaban.');
+
+      const rekapRows = (dataRekap.rows || []).map(barisRekapKeSheet);
+      const jawabanRows = siapkanBarisJawaban(dataJawaban.rows || []);
+      if (!rekapRows.length && !jawabanRows.length) {
+        setActionMsg('⚠️ Belum ada data yang bisa diunduh.');
+        return;
+      }
+
+      const jawabanUntukSheet = jawabanRows.map(r => {
+        const o = {};
+        KOLOM_JAWABAN_MENTAH.forEach(k => { o[k.label] = r[k.key] ?? ''; });
+        return o;
+      });
+
+      const tanggal = new Date().toISOString().slice(0, 10);
+      await unduhWorkbook(`tes-diagnostik_data-lengkap_${tanggal}.xlsx`, [
+        { nama: 'Rekap Hasil', rows: rekapRows, header: headerRekapSheet() },
+        { nama: 'Jawaban Mentah', rows: jawabanUntukSheet, header: KOLOM_JAWABAN_MENTAH.map(k => k.label) },
+        { nama: 'Analisis Butir', rows: hitungAnalisisButir(dataJawaban.rows || []) },
+      ]);
+      setActionMsg(`✓ Excel terunduh: ${rekapRows.length} peserta, ${jawabanRows.length} baris jawaban.`);
+    } catch (e) {
+      setActionMsg(`⚠️ ${e.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const unduhSemuaJawaban = async () => {
     setActionLoading('__semua__');
     setActionMsg('');
@@ -273,7 +372,7 @@ export default function AdminPage() {
 
   const cocok = (r, q) => {
     if (!q) return true;
-    const hay = `${r.nama} ${r.kelas || ''} ${r.sekolah || ''} ${r.username}`.toLowerCase();
+    const hay = `${r.nama} ${r.nis || ''} ${r.kelas || ''} ${r.sekolah || ''} ${r.username}`.toLowerCase();
     return hay.includes(q.toLowerCase());
   };
   const mengerjakanTampil = mengerjakan.filter(r => cocok(r, search));
@@ -328,11 +427,15 @@ export default function AdminPage() {
             <button className="btn btn-outline btn-auto btn-sm" onClick={() => load(pin)} disabled={loading}>
               {loading ? '⏳ Memuat...' : '🔄 Refresh'}
             </button>
+            <button className="btn btn-auto btn-sm" onClick={unduhExcelLengkap} disabled={actionLoading === '__excel__'}
+              title="Rekap hasil + jawaban mentah + analisis butir, dalam satu file Excel. Kolom rekapnya sama persis dengan sheet Hasil Tes Diagnostik sistem lama.">
+              {actionLoading === '__excel__' ? '⏳ Menyiapkan...' : '📊 Unduh Excel (Semua Data)'}
+            </button>
             <button className="btn btn-outline btn-auto btn-sm" onClick={unduhSemuaJawaban} disabled={actionLoading === '__semua__'}>
               {actionLoading === '__semua__' ? '⏳ Menyiapkan...' : '⬇️ Unduh Semua Jawaban Mentah'}
             </button>
             <input
-              className="search-input" placeholder="Cari nama / kelas / sekolah..."
+              className="search-input" placeholder="Cari nama / NIS / kelas / sekolah..."
               value={search} onChange={e => setSearch(e.target.value)}
             />
           </div>
@@ -378,7 +481,7 @@ export default function AdminPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  {['Nama', 'Kelas', 'Sekolah', 'Jenjang', 'Progres', 'Soal Terjawab', 'Pelanggaran', 'Terakhir Aktif', 'Status', 'Aksi'].map(h => (
+                  {['Nama', 'NIS', 'Kelas', 'Sekolah', 'Jenjang', 'Progres', 'Soal Terjawab', 'Pelanggaran', 'Terakhir Aktif', 'Status', 'Aksi'].map(h => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
@@ -401,6 +504,7 @@ export default function AdminPage() {
                         </button>
                         {r.nama}
                       </td>
+                      <td className="muted">{r.nis || r.username || '-'}</td>
                       <td>{r.kelas || '-'}</td>
                       <td>{r.sekolah}</td>
                       <td style={{ textTransform: 'uppercase' }}>{r.jenjang}</td>
@@ -469,7 +573,7 @@ export default function AdminPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  {['Nama', 'Kelas', 'Sekolah', 'Status', 'Level IQ', 'Skor IST', 'Est. IQ', 'RIASEC', 'Gaya', 'Bakat', 'Selesai', 'Aksi'].map(h => (
+                  {['Nama', 'NIS', 'Kelas', 'Sekolah', 'Status', 'Level IQ', 'Skor IST', 'Est. IQ', 'RIASEC', 'Gaya', 'Bakat', 'Selesai', 'Aksi'].map(h => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
@@ -490,6 +594,7 @@ export default function AdminPage() {
                         </button>
                         {r.nama}
                       </td>
+                      <td className="muted">{r.nis || r.username || '-'}</td>
                       <td>{r.kelas || '-'}</td>
                       <td>{r.sekolah}</td>
                       <td>

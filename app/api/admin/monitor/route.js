@@ -17,7 +17,7 @@ export async function GET(req) {
   try {
     const rows = await sql`
       select
-        s.id as sesi_id, s.username, si.nama, si.kelas, si.sekolah,
+        s.id as sesi_id, s.username, si.nis, si.nama, si.kelas, si.sekolah,
         s.jenjang, s.status, s.tahap_ke, s.total_tahap, s.cheat_count,
         s.mulai_at, s.heartbeat_at, s.selesai_at, s.ditandai, s.catatan_panitia,
         (select count(*)::int from jawaban j where j.sesi_id = s.id) as jumlah_terjawab,

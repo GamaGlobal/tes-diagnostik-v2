@@ -1,0 +1,596 @@
+diff --git a/app/admin/page.js b/app/admin/page.js
+index 6195f66..b30ad4d 100644
+--- a/app/admin/page.js
++++ b/app/admin/page.js
+@@ -1,6 +1,8 @@
+ 'use client';
+ import { useState, useEffect, useCallback, useMemo } from 'react';
+ 
++import { barisRekapKeSheet, headerRekapSheet } from '../../lib/rekap-kolom';
++
+ const AMBANG_AKTIF_DETIK = 90;   // heartbeat dikirim tiap 20 detik -> >90 detik dianggap idle
+ const AMBANG_DITINGGAL_MENIT = 5; // > 5 menit tanpa heartbeat -> kemungkinan ditinggal
+ 
+@@ -92,7 +94,7 @@ function siapkanBarisJawaban(rows) {
+ // (level IQ / persentase / RIASEC / gaya / bakat) supaya panitia bisa
+ // langsung menganalisis dari satu file tanpa buka panel lain.
+ const KOLOM_JAWABAN_MENTAH = [
+-  { key: 'nama', label: 'Nama' }, { key: 'kelas', label: 'Kelas' }, { key: 'sekolah', label: 'Sekolah' },
++  { key: 'nama', label: 'Nama' }, { key: 'nis', label: 'NIS' }, { key: 'kelas', label: 'Kelas' }, { key: 'sekolah', label: 'Sekolah' },
+   { key: 'jenjang', label: 'Jenjang' }, { key: 'status_sesi', label: 'Status Sesi' },
+   { key: 'level_ist', label: 'Level IQ' }, { key: 'skor_ist_teks', label: 'Skor IST' },
+   { key: 'estimasi_iq', label: 'Estimasi IQ' }, { key: 'lengkap_teks', label: 'Semua Soal Terjawab?' },
+@@ -105,6 +107,55 @@ const KOLOM_JAWABAN_MENTAH = [
+   { key: 'status_jawaban', label: 'Status Jawaban' }, { key: 'dijawab_at', label: 'Dijawab Pada' },
+ ];
+ 
++// ── util EXCEL (.xlsx) ────────────────────────────────────────────────
++// SheetJS di-import DINAMIS (hanya saat tombol unduh ditekan) supaya tidak
++// ikut menggemukkan bundel halaman /admin yang dipakai sambil memantau tes.
++async function unduhWorkbook(namaFile, sheets) {
++  const XLSX = await import('xlsx');
++  const wb = XLSX.utils.book_new();
++  for (const { nama, rows, header } of sheets) {
++    const ws = XLSX.utils.json_to_sheet(rows, header ? { header } : undefined);
++    // lebar kolom sekadarnya biar tidak semua mepet
++    ws['!cols'] = (header || Object.keys(rows[0] || {})).map(h => ({
++      wch: Math.min(40, Math.max(10, String(h).length + 4)),
++    }));
++    ws['!freeze'] = { xSplit: 0, ySplit: 1 };
++    XLSX.utils.book_append_sheet(wb, ws, nama.slice(0, 31));
++  }
++  XLSX.writeFile(wb, namaFile);
++}
++
++// Statistik per butir soal, dihitung dari baris jawaban mentah.
++// p (%) = proporsi peserta yang menjawab benar: makin besar = makin mudah.
++// Item likert (RIASEC/GAYA) tidak punya benar/salah, jadi dilewati.
++function hitungAnalisisButir(rows) {
++  const peta = new Map();
++  for (const r of rows) {
++    if (r.benar === null || r.benar === undefined) continue;
++    const k = r.kode_soal;
++    if (!peta.has(k)) {
++      peta.set(k, {
++        'Kode Soal': k, 'Kategori': r.kategori, 'Sub Kategori': r.sub_kategori || '-',
++        'Jenjang': r.jenjang, 'No Soal': r.urutan, 'Teks Soal': r.pertanyaan,
++        'Kunci Jawaban': r.jawaban_kunci, 'Dijawab': 0, 'Benar': 0,
++      });
++    }
++    const it = peta.get(k);
++    it['Dijawab'] += 1;
++    if (r.benar === true) it['Benar'] += 1;
++  }
++  return [...peta.values()].map(it => {
++    const p = it['Dijawab'] ? (it['Benar'] / it['Dijawab']) : null;
++    return {
++      ...it,
++      'p (%)': p === null ? '-' : Math.round(p * 1000) / 10,
++      'Catatan Butir': p === null ? 'belum ada data'
++        : p >= 0.85 ? 'terlalu mudah' : p <= 0.20 ? 'terlalu sulit' : 'layak',
++    };
++  }).sort((a, b) => String(a['Kategori']).localeCompare(String(b['Kategori'])) || a['No Soal'] - b['No Soal']);
++}
++
++
+ export default function AdminPage() {
+   const [pin, setPin] = useState('');
+   const [authed, setAuthed] = useState(false);
+@@ -251,6 +302,54 @@ export default function AdminPage() {
+     }
+   };
+ 
++  // Satu file Excel berisi SEMUA data yang dibutuhkan panitia untuk analisis:
++  //   Sheet "Rekap Hasil"    -> 1 baris = 1 peserta, kolomnya SAMA PERSIS dengan
++  //                             sheet "Hasil Tes Diagnostik" di sistem lama
++  //                             (Apps Script/Code.gs), jadi dua file itu tinggal
++  //                             ditumpuk kalau mau dianalisis bareng.
++  //   Sheet "Jawaban Mentah" -> 1 baris = 1 jawaban, lengkap dengan teks soal & kunci.
++  //   Sheet "Analisis Butir" -> tingkat kesulitan tiap soal (audit bank soal).
++  const unduhExcelLengkap = async () => {
++    setActionLoading('__excel__');
++    setActionMsg('');
++    try {
++      const headers = { 'x-panitia-pin': pin };
++      const [resRekap, resJawaban] = await Promise.all([
++        fetch('/api/admin/rekap?termasukBelumSelesai=1', { headers }),
++        fetch('/api/admin/jawaban-mentah?semua=1', { headers }),
++      ]);
++      const dataRekap = await resJson(resRekap);
++      const dataJawaban = await resJson(resJawaban);
++      if (!resRekap.ok) throw new Error(dataRekap.error || 'Gagal mengambil rekap.');
++      if (!resJawaban.ok) throw new Error(dataJawaban.error || 'Gagal mengambil jawaban.');
++
++      const rekapRows = (dataRekap.rows || []).map(barisRekapKeSheet);
++      const jawabanRows = siapkanBarisJawaban(dataJawaban.rows || []);
++      if (!rekapRows.length && !jawabanRows.length) {
++        setActionMsg('⚠️ Belum ada data yang bisa diunduh.');
++        return;
++      }
++
++      const jawabanUntukSheet = jawabanRows.map(r => {
++        const o = {};
++        KOLOM_JAWABAN_MENTAH.forEach(k => { o[k.label] = r[k.key] ?? ''; });
++        return o;
++      });
++
++      const tanggal = new Date().toISOString().slice(0, 10);
++      await unduhWorkbook(`tes-diagnostik_data-lengkap_${tanggal}.xlsx`, [
++        { nama: 'Rekap Hasil', rows: rekapRows, header: headerRekapSheet() },
++        { nama: 'Jawaban Mentah', rows: jawabanUntukSheet, header: KOLOM_JAWABAN_MENTAH.map(k => k.label) },
++        { nama: 'Analisis Butir', rows: hitungAnalisisButir(dataJawaban.rows || []) },
++      ]);
++      setActionMsg(`✓ Excel terunduh: ${rekapRows.length} peserta, ${jawabanRows.length} baris jawaban.`);
++    } catch (e) {
++      setActionMsg(`⚠️ ${e.message}`);
++    } finally {
++      setActionLoading(null);
++    }
++  };
++
+   const unduhSemuaJawaban = async () => {
+     setActionLoading('__semua__');
+     setActionMsg('');
+@@ -273,7 +372,7 @@ export default function AdminPage() {
+ 
+   const cocok = (r, q) => {
+     if (!q) return true;
+-    const hay = `${r.nama} ${r.kelas || ''} ${r.sekolah || ''} ${r.username}`.toLowerCase();
++    const hay = `${r.nama} ${r.nis || ''} ${r.kelas || ''} ${r.sekolah || ''} ${r.username}`.toLowerCase();
+     return hay.includes(q.toLowerCase());
+   };
+   const mengerjakanTampil = mengerjakan.filter(r => cocok(r, search));
+@@ -328,11 +427,15 @@ export default function AdminPage() {
+             <button className="btn btn-outline btn-auto btn-sm" onClick={() => load(pin)} disabled={loading}>
+               {loading ? '⏳ Memuat...' : '🔄 Refresh'}
+             </button>
++            <button className="btn btn-auto btn-sm" onClick={unduhExcelLengkap} disabled={actionLoading === '__excel__'}
++              title="Rekap hasil + jawaban mentah + analisis butir, dalam satu file Excel. Kolom rekapnya sama persis dengan sheet Hasil Tes Diagnostik sistem lama.">
++              {actionLoading === '__excel__' ? '⏳ Menyiapkan...' : '📊 Unduh Excel (Semua Data)'}
++            </button>
+             <button className="btn btn-outline btn-auto btn-sm" onClick={unduhSemuaJawaban} disabled={actionLoading === '__semua__'}>
+               {actionLoading === '__semua__' ? '⏳ Menyiapkan...' : '⬇️ Unduh Semua Jawaban Mentah'}
+             </button>
+             <input
+-              className="search-input" placeholder="Cari nama / kelas / sekolah..."
++              className="search-input" placeholder="Cari nama / NIS / kelas / sekolah..."
+               value={search} onChange={e => setSearch(e.target.value)}
+             />
+           </div>
+@@ -378,7 +481,7 @@ export default function AdminPage() {
+             <table className="data-table">
+               <thead>
+                 <tr>
+-                  {['Nama', 'Kelas', 'Sekolah', 'Jenjang', 'Progres', 'Soal Terjawab', 'Pelanggaran', 'Terakhir Aktif', 'Status', 'Aksi'].map(h => (
++                  {['Nama', 'NIS', 'Kelas', 'Sekolah', 'Jenjang', 'Progres', 'Soal Terjawab', 'Pelanggaran', 'Terakhir Aktif', 'Status', 'Aksi'].map(h => (
+                     <th key={h}>{h}</th>
+                   ))}
+                 </tr>
+@@ -401,6 +504,7 @@ export default function AdminPage() {
+                         </button>
+                         {r.nama}
+                       </td>
++                      <td className="muted">{r.nis || r.username || '-'}</td>
+                       <td>{r.kelas || '-'}</td>
+                       <td>{r.sekolah}</td>
+                       <td style={{ textTransform: 'uppercase' }}>{r.jenjang}</td>
+@@ -469,7 +573,7 @@ export default function AdminPage() {
+             <table className="data-table">
+               <thead>
+                 <tr>
+-                  {['Nama', 'Kelas', 'Sekolah', 'Status', 'Level IQ', 'Skor IST', 'Est. IQ', 'RIASEC', 'Gaya', 'Bakat', 'Selesai', 'Aksi'].map(h => (
++                  {['Nama', 'NIS', 'Kelas', 'Sekolah', 'Status', 'Level IQ', 'Skor IST', 'Est. IQ', 'RIASEC', 'Gaya', 'Bakat', 'Selesai', 'Aksi'].map(h => (
+                     <th key={h}>{h}</th>
+                   ))}
+                 </tr>
+@@ -490,6 +594,7 @@ export default function AdminPage() {
+                         </button>
+                         {r.nama}
+                       </td>
++                      <td className="muted">{r.nis || r.username || '-'}</td>
+                       <td>{r.kelas || '-'}</td>
+                       <td>{r.sekolah}</td>
+                       <td>
+diff --git a/app/api/admin/jawaban-mentah/route.js b/app/api/admin/jawaban-mentah/route.js
+index f26761b..e66677a 100644
+--- a/app/api/admin/jawaban-mentah/route.js
++++ b/app/api/admin/jawaban-mentah/route.js
+@@ -33,7 +33,7 @@ export async function GET(req) {
+     const rows = semua
+       ? await sql`
+           select
+-            s.id as sesi_id, si.nama, si.kelas, si.sekolah, s.jenjang,
++            s.id as sesi_id, si.nis, si.nama, si.kelas, si.sekolah, s.jenjang,
+             case s.status
+               when 'selesai_terkirim' then 'Selesai (siswa sendiri)'
+               when 'selesai_paksa_panitia' then 'Diselesaikan Panitia'
+@@ -57,7 +57,7 @@ export async function GET(req) {
+         `
+       : await sql`
+           select
+-            s.id as sesi_id, si.nama, si.kelas, si.sekolah, s.jenjang,
++            s.id as sesi_id, si.nis, si.nama, si.kelas, si.sekolah, s.jenjang,
+             case s.status
+               when 'selesai_terkirim' then 'Selesai (siswa sendiri)'
+               when 'selesai_paksa_panitia' then 'Diselesaikan Panitia'
+diff --git a/app/api/admin/monitor/route.js b/app/api/admin/monitor/route.js
+index 4f7102e..e8d83fd 100644
+--- a/app/api/admin/monitor/route.js
++++ b/app/api/admin/monitor/route.js
+@@ -17,7 +17,7 @@ export async function GET(req) {
+   try {
+     const rows = await sql`
+       select
+-        s.id as sesi_id, s.username, si.nama, si.kelas, si.sekolah,
++        s.id as sesi_id, s.username, si.nis, si.nama, si.kelas, si.sekolah,
+         s.jenjang, s.status, s.tahap_ke, s.total_tahap, s.cheat_count,
+         s.mulai_at, s.heartbeat_at, s.selesai_at, s.ditandai, s.catatan_panitia,
+         (select count(*)::int from jawaban j where j.sesi_id = s.id) as jumlah_terjawab,
+diff --git a/app/api/admin/rekap/route.js b/app/api/admin/rekap/route.js
+new file mode 100644
+index 0000000..f27eaec
+--- /dev/null
++++ b/app/api/admin/rekap/route.js
+@@ -0,0 +1,50 @@
++// GET /api/admin/rekap            -> rekap SEMUA peserta (1 baris = 1 peserta)
++// GET /api/admin/rekap?sesiId=... -> rekap 1 peserta
++// Header: x-panitia-pin (sama seperti endpoint admin lain)
++//
++// Ini pasangan dari /api/admin/jawaban-mentah: kalau yang itu "1 baris = 1
++// jawaban", endpoint ini "1 baris = 1 peserta" -- bentuk yang sama dengan
++// sheet "Hasil Tes Diagnostik" di tes diagnostik v1 (Apps Script/Code.gs),
++// supaya dua dataset itu bisa ditumpuk dan dianalisis bersama.
++//
++// Sumbernya view v_rekap_hasil (lihat db/009_nis_dan_rekap_sinkron.sql):
++// skor domain Verbal/Numerik/Figural/Memori dihitung ulang di SQL dari
++// tabel jawaban + bank_soal, jadi tidak perlu dihitung lagi di klien.
++//
++// CATATAN penamaan yang gampang tertukar:
++//   - kolom "Level IST" di sheet v1 = jenjang (SMA/SMP)  -> di sini `level_ist`
++//   - kolom "Klasifikasi" di sheet v1                    -> di sini `klasifikasi`
++//     (di tabel `hasil`, klasifikasi IQ memang disimpan di kolom level_ist)
++import { sql } from '../../../../lib/db';
++
++export async function GET(req) {
++  const pin = req.headers.get('x-panitia-pin');
++  if (!pin || pin !== process.env.PANITIA_PIN) {
++    return Response.json({ error: 'PIN panitia salah' }, { status: 401 });
++  }
++
++  const { searchParams } = new URL(req.url);
++  const sesiId = searchParams.get('sesiId');
++  // default: hanya sesi yang sudah punya hasil. ?termasukBelumSelesai=1 untuk semua.
++  const termasukBelumSelesai = searchParams.get('termasukBelumSelesai') === '1';
++
++  try {
++    const rows = sesiId
++      ? await sql`select * from v_rekap_hasil where sesi_id = ${sesiId}`
++      : termasukBelumSelesai
++        ? await sql`select * from v_rekap_hasil order by sekolah, kelas, nama`
++        : await sql`
++            select * from v_rekap_hasil
++            where status <> 'mengerjakan'
++            order by sekolah, kelas, nama
++          `;
++
++    return Response.json({ rows });
++  } catch (err) {
++    console.error('rekap error:', err);
++    const pesan = /v_rekap_hasil/.test(err?.message || '')
++      ? 'View v_rekap_hasil belum ada. Jalankan migrasi db/009_nis_dan_rekap_sinkron.sql dulu (npm run db:migrate).'
++      : 'Gagal mengambil rekap dari server: ' + (err?.message || 'tidak diketahui');
++    return Response.json({ error: pesan }, { status: 500 });
++  }
++}
+diff --git a/db/009_nis_dan_rekap_sinkron.sql b/db/009_nis_dan_rekap_sinkron.sql
+new file mode 100644
+index 0000000..4e356a0
+--- /dev/null
++++ b/db/009_nis_dan_rekap_sinkron.sql
+@@ -0,0 +1,172 @@
++-- ============================================================
++-- 009: SINKRONISASI DENGAN DATA TES DIAGNOSTIK v1 (Google Sheet / Code.gs)
++--
++-- Tujuan: hasil dari SimTKA-v2 (Postgres/Neon) bisa DITUMPUK dan DIANALISIS
++-- BERSAMA dengan file "Hasil Tes Diagnostik" dari versi Apps Script, tanpa
++-- perlu merapikan kolom manual. Caranya:
++--
++--   1. Tambah kolom `nis` di tabel siswa. Di v1, NIS adalah kunci identitas
++--      peserta (5 digit) yang dipakai cek-hasil.html & dashboard-panitia.html.
++--      Di v2 kuncinya `username`, jadi tanpa kolom ini kedua dataset tidak
++--      bisa di-JOIN. Kalau username memang sudah berupa NIS 5 digit, kolom
++--      ini otomatis terisi (backfill di bawah).
++--
++--   2. View `v_rekap_hasil`: 1 BARIS = 1 PESERTA (bukan 1 baris = 1 jawaban),
++--      dengan isi kolom yang setara dengan sheet "Hasil Tes Diagnostik".
++--      Skor domain (Verbal/Numerik/Figural/Memori) dihitung ulang di sini dari
++--      tabel `jawaban` + `bank_soal` -- penyebutnya jumlah soal yang MEMANG
++--      ditugaskan untuk jenjang tsb (jenjang peserta + soal 'semua'), bukan
++--      cuma yang sempat dijawab; ini konsisten dengan lib/scoring.js supaya
++--      sesi yang belum selesai tidak tampak seperti skor sempurna.
++--
++--   3. View `v_analisis_butir`: statistik per butir soal (tingkat kesulitan /
++--      p-value + daya beda kasar), untuk audit kualitas bank soal.
++--
++-- Aman dijalankan berkali-kali.
++-- ============================================================
++
++alter table siswa
++  add column if not exists nis text;
++
++-- Backfill: kalau username-nya memang NIS (5 digit angka), pakai itu.
++update siswa set nis = username
++where nis is null and username ~ '^[0-9]{5}$';
++
++create index if not exists idx_siswa_nis on siswa(nis) where nis is not null;
++
++-- ============ REKAP HASIL (1 baris = 1 peserta) ============
++create or replace view v_rekap_hasil as
++with domain_ist as (
++  -- benar & total per domain IST, total dari bank_soal (soal yang ditugaskan),
++  -- bukan dari jumlah soal yang sempat dijawab.
++  select
++    s.id                                        as sesi_id,
++    d.domain,
++    count(*)::int                               as total_soal,
++    count(*) filter (where j.benar)::int        as benar
++  from sesi_tes s
++  join bank_soal b
++    on (b.jenjang = s.jenjang or b.jenjang = 'semua')
++  join (values
++          ('SE','Verbal'), ('WA','Verbal'), ('AN','Verbal'), ('GE','Verbal'),
++          ('RA','Numerik'), ('ZR','Numerik'),
++          ('FA','Figural'), ('WU','Figural'),
++          ('ME','Memori')
++       ) as d(kategori, domain) on d.kategori = b.kategori
++  left join jawaban j
++    on j.sesi_id = s.id and j.kode_soal = b.kode_soal
++  group by s.id, d.domain
++),
++domain_pivot as (
++  select
++    sesi_id,
++    max(case when domain = 'Verbal'  and total_soal > 0 then round(benar * 100.0 / total_soal) end) as verbal_persen,
++    max(case when domain = 'Numerik' and total_soal > 0 then round(benar * 100.0 / total_soal) end) as numerik_persen,
++    max(case when domain = 'Figural' and total_soal > 0 then round(benar * 100.0 / total_soal) end) as figural_persen,
++    max(case when domain = 'Memori'  and total_soal > 0 then round(benar * 100.0 / total_soal) end) as memori_persen
++  from domain_ist
++  group by sesi_id
++),
++pelanggaran_rekap as (
++  select
++    sesi_id,
++    count(*)::int as jumlah,
++    string_agg(jenis || ' @ ' || to_char(waktu, 'YYYY-MM-DD HH24:MI:SS'), ' | ' order by waktu) as detail
++  from pelanggaran
++  group by sesi_id
++),
++terjawab as (
++  select sesi_id, count(*)::int as jumlah_terjawab
++  from jawaban group by sesi_id
++)
++select
++  -- identitas (setara kolom Nama/Sekolah/Kelas/NIS di sheet v1)
++  s.id                                   as sesi_id,
++  si.username,
++  si.nis,
++  si.nama,
++  si.sekolah,
++  si.kelas,
++  s.jenjang,
++  upper(s.jenjang)                       as level_ist,   -- 'SMA'/'SMP' (kolom "Level IST" di sheet v1)
++  s.status,
++  case s.status
++    when 'selesai_terkirim'      then 'Selesai Normal'
++    when 'selesai_paksa_panitia' then 'Selesai (Submit Paksa)'
++    when 'terkunci_pelanggaran'  then 'Terkunci (pelanggaran)'
++    when 'mengerjakan'           then 'Sedang Mengerjakan'
++    else s.status
++  end                                    as status_label,
++  s.catatan_panitia,
++  s.ditandai,
++  s.mulai_at,
++  s.heartbeat_at,
++  s.selesai_at,
++  coalesce(s.item_bank_version, '')      as item_bank_version,
++  coalesce(t.jumlah_terjawab, 0)         as jumlah_terjawab,
++
++  -- skor IST (subskor = {"SE":4,"WA":3,...}; klasifikasi ada di hasil.level_ist)
++  h.subskor,
++  h.total_benar,
++  h.total_soal,
++  h.persentase,
++  h.estimasi_iq,
++  h.level_ist                            as klasifikasi,  -- "Rata-rata"/"Superior"/dst.
++  h.lengkap,
++  h.sumber,
++  h.dihitung_at,
++  dp.verbal_persen,
++  dp.numerik_persen,
++  dp.figural_persen,
++  dp.memori_persen,
++
++  -- minat / gaya / bakat (bakat sudah 6 rumpun: MIPA IPS BHS INF VOK AGM)
++  h.riasec       -> 'scores'             as riasec_scores,
++  h.riasec      ->> 'topCode'            as riasec_top,
++  h.gaya_belajar -> 'scores'             as gaya_scores,
++  h.gaya_belajar->> 'dominant'           as gaya_dominant,
++  h.bakat        -> 'scores'             as bakat_scores,
++  h.bakat       ->> 'top'                as bakat_top,
++  h.bakat       ->> 'rekomendasi'        as bakat_rekomendasi,
++
++  -- anti-curang
++  s.cheat_count,
++  coalesce(pr.jumlah, 0)                 as pelanggaran_jumlah,
++  coalesce(pr.detail, '')                as pelanggaran_detail
++from sesi_tes s
++join siswa si            on si.username = s.username
++left join hasil h        on h.sesi_id = s.id
++left join domain_pivot dp on dp.sesi_id = s.id
++left join pelanggaran_rekap pr on pr.sesi_id = s.id
++left join terjawab t     on t.sesi_id = s.id;
++
++-- ============ ANALISIS BUTIR SOAL ============
++-- p (tingkat kesulitan) = proporsi peserta yang menjawab benar.
++-- Konvensi: p mendekati 1 = soal mudah, mendekati 0 = soal sulit.
++-- Item likert (RIASEC/GAYA) tidak punya benar/salah, jadi diabaikan.
++create or replace view v_analisis_butir as
++select
++  b.kode_soal,
++  b.kategori,
++  b.sub_kategori,
++  b.jenjang,
++  b.tipe,
++  b.urutan,
++  b.pertanyaan,
++  b.jawaban_kunci,
++  b.item_bank_version,
++  count(j.*)::int                                              as dijawab,
++  count(*) filter (where j.benar)::int                         as benar,
++  case when count(j.*) > 0
++       then round(count(*) filter (where j.benar) * 100.0 / count(j.*), 1)
++  end                                                          as p_persen,
++  case
++    when count(j.*) = 0 then 'belum ada data'
++    when count(*) filter (where j.benar) * 1.0 / count(j.*) >= 0.85 then 'terlalu mudah'
++    when count(*) filter (where j.benar) * 1.0 / count(j.*) <= 0.20 then 'terlalu sulit'
++    else 'layak'
++  end                                                          as catatan_butir
++from bank_soal b
++left join jawaban j on j.kode_soal = b.kode_soal and j.benar is not null
++group by b.kode_soal, b.kategori, b.sub_kategori, b.jenjang, b.tipe,
++         b.urutan, b.pertanyaan, b.jawaban_kunci, b.item_bank_version;
+diff --git a/lib/rekap-kolom.js b/lib/rekap-kolom.js
+new file mode 100644
+index 0000000..3398811
+--- /dev/null
++++ b/lib/rekap-kolom.js
+@@ -0,0 +1,115 @@
++// ============================================================
++// Pemetaan kolom REKAP HASIL agar identik dengan sheet
++// "Hasil Tes Diagnostik" milik tes diagnostik v1 (Apps Script / Code.gs).
++//
++// Kenapa perlu: panitia memegang dua sumber data — file Google Sheet dari
++// sistem lama dan database SimTKA-v2. Kalau nama & urutan kolomnya sama
++// persis, dua file itu tinggal ditumpuk (copy-paste / UNION) lalu dianalisis
++// sebagai satu tabel, tanpa merapikan header manual.
++//
++// URUTAN kolom di bawah ini SENGAJA sama persis dengan headerHasil_() di
++// Code.gs. Jangan menyisipkan kolom di tengah — kolom khas v2 ditaruh di
++// blok terakhir (setelah 'Versi Bank Soal').
++// ============================================================
++
++// Rumpun bakat — 6 rumpun, harus sinkron dengan BAKAT_LABELS di lib/labels.js
++// dan BAKAT_KOLOM di Code.gs.
++export const BAKAT_KOLOM = [
++  { key: 'MIPA', label: 'MIPA (%)' },
++  { key: 'IPS', label: 'IPS (%)' },
++  { key: 'BHS', label: 'Bahasa (%)' },
++  { key: 'INF', label: 'Informatika (%)' },
++  { key: 'VOK', label: 'Vokasi (%)' },
++  { key: 'AGM', label: 'Keagamaan (%)' },
++];
++
++const IST_KATEGORI = ['SE', 'WA', 'AN', 'GE', 'RA', 'ZR', 'FA', 'WU', 'ME'];
++const RIASEC_KEY = ['R', 'I', 'A', 'S', 'E', 'C'];
++
++const DASH = '-';
++const nz = (v) => (v === null || v === undefined || v === '' ? DASH : v);
++const dariJson = (obj, key) => (obj && obj[key] !== undefined && obj[key] !== null ? obj[key] : DASH);
++const waktu = (iso) => (iso ? new Date(iso).toLocaleString('id-ID') : DASH);
++
++/**
++ * Ubah satu baris v_rekap_hasil jadi objek dengan KUNCI = header sheet v1.
++ */
++export function barisRekapKeSheet(r) {
++  const subskor = r.subskor || {};
++  const riasec = r.riasec_scores || {};
++  const gaya = r.gaya_scores || {};
++  const bakat = r.bakat_scores || {};
++
++  const out = {
++    // --- blok identik dengan sheet v1 ---
++    'Timestamp': waktu(r.selesai_at || r.dihitung_at || r.mulai_at),
++    'Nama': nz(r.nama),
++    'Sekolah': nz(r.sekolah),
++    'Kelas': nz(r.kelas),
++    'NIS': nz(r.nis || r.username),
++    'Status': nz(r.status_label),
++    'Catatan': nz(r.catatan_panitia),
++    'Level IST': nz(r.level_ist),          // SMA / SMP
++  };
++  IST_KATEGORI.forEach(k => { out[k] = dariJson(subskor, k); });
++  out['Total Benar'] = nz(r.total_benar);
++  out['Total Soal'] = nz(r.total_soal);
++  out['Persentase (%)'] = nz(r.persentase);
++  out['Estimasi IQ'] = nz(r.estimasi_iq);
++  out['Klasifikasi'] = nz(r.klasifikasi);  // "Rata-rata"/"Superior"/dst.
++  out['Verbal (%)'] = nz(r.verbal_persen);
++  out['Numerik (%)'] = nz(r.numerik_persen);
++  out['Figural (%)'] = nz(r.figural_persen);
++  out['Memori (%)'] = nz(r.memori_persen);
++
++  out['Kode RIASEC (3 Besar)'] = nz(r.riasec_top);
++  RIASEC_KEY.forEach(k => { out[`${k} (%)`] = dariJson(riasec, k); });
++
++  out['Gaya Belajar Dominan'] = nz(r.gaya_dominant);
++  out['Visual (%)'] = dariJson(gaya, 'V');
++  out['Auditori (%)'] = dariJson(gaya, 'A');
++  out['Kinestetik (%)'] = dariJson(gaya, 'K');
++
++  out['Jumlah Pelanggaran'] = r.pelanggaran_jumlah ?? r.cheat_count ?? 0;
++  out['Detail Pelanggaran'] = r.pelanggaran_detail || '';
++
++  out['Bakat Dominan'] = nz(r.bakat_top);
++  out['Rekomendasi Mapel Pilihan'] = nz(r.bakat_rekomendasi);
++  BAKAT_KOLOM.forEach(b => { out[b.label] = dariJson(bakat, b.key); });
++
++  out['Versi Bank Soal'] = nz(r.item_bank_version);
++
++  // --- blok khas v2 (tidak ada di sheet lama, ditaruh paling belakang) ---
++  out['Sumber Data'] = 'SimTKA-v2';
++  out['Semua Soal Terjawab?'] = r.lengkap === true ? 'Ya'
++    : r.lengkap === false ? 'TIDAK (soal belum semua terjawab)' : DASH;
++  out['Jumlah Soal Terjawab'] = r.jumlah_terjawab ?? DASH;
++  out['Sumber Skor'] = r.sumber === 'manual_panitia' ? 'Dihitung ulang (paksa panitia)' : 'Otomatis';
++  out['Ditandai Panitia'] = r.ditandai ? 'Ya' : 'Tidak';
++  out['Mulai'] = waktu(r.mulai_at);
++  out['Selesai'] = waktu(r.selesai_at);
++  out['Username'] = nz(r.username);
++  out['Sesi ID'] = nz(r.sesi_id);
++
++  return out;
++}
++
++/** Urutan header final — dipakai sebagai urutan kolom di file Excel/CSV. */
++export function headerRekapSheet() {
++  const h = [
++    'Timestamp', 'Nama', 'Sekolah', 'Kelas', 'NIS', 'Status', 'Catatan', 'Level IST',
++    ...IST_KATEGORI,
++    'Total Benar', 'Total Soal', 'Persentase (%)', 'Estimasi IQ', 'Klasifikasi',
++    'Verbal (%)', 'Numerik (%)', 'Figural (%)', 'Memori (%)',
++    'Kode RIASEC (3 Besar)', ...RIASEC_KEY.map(k => `${k} (%)`),
++    'Gaya Belajar Dominan', 'Visual (%)', 'Auditori (%)', 'Kinestetik (%)',
++    'Jumlah Pelanggaran', 'Detail Pelanggaran',
++    'Bakat Dominan', 'Rekomendasi Mapel Pilihan',
++    ...BAKAT_KOLOM.map(b => b.label),
++    'Versi Bank Soal',
++  ];
++  return h.concat([
++    'Sumber Data', 'Semua Soal Terjawab?', 'Jumlah Soal Terjawab', 'Sumber Skor',
++    'Ditandai Panitia', 'Mulai', 'Selesai', 'Username', 'Sesi ID',
++  ]);
++}
+diff --git a/package.json b/package.json
+index a840b56..dc6d6fc 100644
+--- a/package.json
++++ b/package.json
+@@ -14,6 +14,7 @@
+     "dotenv": "^16.4.5",
+     "next": "14.2.5",
+     "react": "^18.3.1",
+-    "react-dom": "^18.3.1"
++    "react-dom": "^18.3.1",
++    "xlsx": "^0.18.5"
+   }
+ }
