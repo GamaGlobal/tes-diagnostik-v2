@@ -1,0 +1,159 @@
+diff --git a/app/admin/page.js b/app/admin/page.js
+index 6dec537..0bfdc6c 100644
+--- a/app/admin/page.js
++++ b/app/admin/page.js
+@@ -42,6 +42,17 @@ function csvEscape(v) {
+   const s = String(v);
+   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+ }
++// Parse JSON respons dengan aman -- kalau server error/crash dan balas body
++// kosong atau HTML (mis. halaman error 500 generik Vercel), `res.json()`
++// biasa akan lempar "Unexpected end of JSON input" yang membingungkan.
++// Helper ini menangkap itu dan mengubahnya jadi pesan yang jelas.
++async function resJson(res) {
++  try {
++    return await res.json();
++  } catch {
++    return { error: `Server merespons tanpa data yang valid (status ${res.status}). Coba lagi sebentar lagi.` };
++  }
++}
+ function toCsv(rows, kolom) {
+   const header = kolom.map(k => k.label).join(',');
+   const body = rows.map(r => kolom.map(k => csvEscape(r[k.key])).join(',')).join('\n');
+@@ -79,7 +90,7 @@ export default function AdminPage() {
+     setError('');
+     try {
+       const res = await fetch('/api/admin/monitor', { headers: { 'x-panitia-pin': pinValue } });
+-      const data = await res.json();
++      const data = await resJson(res);
+       if (!res.ok) throw new Error(data.error || 'Gagal memuat data.');
+       setRows(data.rows || []);
+       setAuthed(true);
+@@ -113,7 +124,7 @@ export default function AdminPage() {
+         method: 'POST', headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ sesiId, dipaksaOleh: pin }),
+       });
+-      const data = await res.json();
++      const data = await resJson(res);
+       if (!res.ok) throw new Error(data.error || 'Gagal memproses.');
+       setActionMsg(`✓ Sesi "${nama}" berhasil diselesaikan.`);
+       load(pin);
+@@ -133,7 +144,7 @@ export default function AdminPage() {
+         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-panitia-pin': pin },
+         body: JSON.stringify({ sesiId }),
+       });
+-      const data = await res.json();
++      const data = await resJson(res);
+       if (!res.ok) throw new Error(data.error || 'Gagal membuka kunci.');
+       setActionMsg(`✓ Sesi "${nama}" dibuka kembali.`);
+       load(pin);
+@@ -153,7 +164,7 @@ export default function AdminPage() {
+         method: 'DELETE', headers: { 'Content-Type': 'application/json', 'x-panitia-pin': pin },
+         body: JSON.stringify({ sesiId }),
+       });
+-      const data = await res.json();
++      const data = await resJson(res);
+       if (!res.ok) throw new Error(data.error || 'Gagal menghapus sesi.');
+       setActionMsg(`✓ Sesi "${nama}" berhasil dihapus.`);
+       load(pin);
+@@ -172,7 +183,7 @@ export default function AdminPage() {
+         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-panitia-pin': pin },
+         body: JSON.stringify({ sesiId, ditandai: !ditandaiSaatIni }),
+       });
+-      const data = await res.json();
++      const data = await resJson(res);
+       if (!res.ok) throw new Error(data.error || 'Gagal menandai sesi.');
+       // update langsung di state biar tidak perlu tunggu refresh 15 detik
+       setRows(prev => prev.map(r => r.sesi_id === sesiId ? { ...r, ditandai: data.ditandai } : r));
+@@ -189,7 +200,7 @@ export default function AdminPage() {
+     setActionMsg('');
+     try {
+       const res = await fetch(`/api/admin/jawaban-mentah?sesiId=${sesiId}`, { headers: { 'x-panitia-pin': pin } });
+-      const data = await res.json();
++      const data = await resJson(res);
+       if (!res.ok) throw new Error(data.error || 'Gagal mengambil jawaban.');
+       if (!data.rows.length) { setActionMsg(`⚠️ Belum ada jawaban tersimpan untuk "${nama}".`); return; }
+       unduhFile(`jawaban-mentah_${nama.replace(/\s+/g, '-')}.csv`, toCsv(data.rows, KOLOM_JAWABAN_MENTAH));
+@@ -206,7 +217,7 @@ export default function AdminPage() {
+     setActionMsg('');
+     try {
+       const res = await fetch('/api/admin/jawaban-mentah?semua=1', { headers: { 'x-panitia-pin': pin } });
+-      const data = await res.json();
++      const data = await resJson(res);
+       if (!res.ok) throw new Error(data.error || 'Gagal mengambil jawaban.');
+       if (!data.rows.length) { setActionMsg('⚠️ Belum ada jawaban tersimpan sama sekali.'); return; }
+       unduhFile('jawaban-mentah_semua-peserta.csv', toCsv(data.rows, KOLOM_JAWABAN_MENTAH));
+diff --git a/app/api/admin/jawaban-mentah/route.js b/app/api/admin/jawaban-mentah/route.js
+index 1806e11..a07b8c3 100644
+--- a/app/api/admin/jawaban-mentah/route.js
++++ b/app/api/admin/jawaban-mentah/route.js
+@@ -22,25 +22,50 @@ export async function GET(req) {
+     return Response.json({ error: 'sesiId atau semua=1 wajib diisi' }, { status: 400 });
+   }
+ 
+-  const rows = await sql`
+-    select
+-      s.id as sesi_id, si.nama, si.kelas, si.sekolah, s.jenjang, s.status,
+-      j.kode_soal, b.kategori, b.sub_kategori, j.jawaban_teks, j.benar, j.dijawab_at
+-    from jawaban j
+-    join sesi_tes s on s.id = j.sesi_id
+-    join siswa si on si.username = s.username
+-    join bank_soal b on b.kode_soal = j.kode_soal
+-    where ${semua ? sql`true` : sql`j.sesi_id = ${sesiId}`}
+-    order by si.nama, j.sesi_id, b.kategori, b.urutan
+-  `;
++  try {
++    // PENTING: `sql` dari @neondatabase/serverless (beda dgn postgres.js) TIDAK
++    // mendukung menyisipkan sql`...` lain di dalam sql`...` induk (itu bug versi
++    // sebelumnya yang bikin endpoint ini crash pas dipanggil dgn semua=1 --
++    // request selesai tanpa body, makanya di klien muncul error "Unexpected end
++    // of JSON input"). Jadi query dipisah jadi 2 cabang lengkap, bukan disatukan
++    // dgn kondisi ternary di dalam template.
++    const rows = semua
++      ? await sql`
++          select
++            s.id as sesi_id, si.nama, si.kelas, si.sekolah, s.jenjang, s.status,
++            j.kode_soal, b.kategori, b.sub_kategori, j.jawaban_teks, j.benar, j.dijawab_at
++          from jawaban j
++          join sesi_tes s on s.id = j.sesi_id
++          join siswa si on si.username = s.username
++          join bank_soal b on b.kode_soal = j.kode_soal
++          order by si.nama, j.sesi_id, b.kategori, b.urutan
++        `
++      : await sql`
++          select
++            s.id as sesi_id, si.nama, si.kelas, si.sekolah, s.jenjang, s.status,
++            j.kode_soal, b.kategori, b.sub_kategori, j.jawaban_teks, j.benar, j.dijawab_at
++          from jawaban j
++          join sesi_tes s on s.id = j.sesi_id
++          join siswa si on si.username = s.username
++          join bank_soal b on b.kode_soal = j.kode_soal
++          where j.sesi_id = ${sesiId}
++          order by si.nama, j.sesi_id, b.kategori, b.urutan
++        `;
+ 
+-  if (!semua && !rows.length) {
+-    // sesi valid tapi belum ada jawaban tersimpan sama sekali dianggap ok,
+-    // tapi sesi yang sama sekali tidak ada tetap 404-kan supaya panitia
+-    // tahu ID-nya salah / sudah terhapus.
+-    const [sesi] = await sql`select id from sesi_tes where id = ${sesiId}`;
+-    if (!sesi) return Response.json({ error: 'Sesi tidak ditemukan' }, { status: 404 });
+-  }
++    if (!semua && !rows.length) {
++      // sesi valid tapi belum ada jawaban tersimpan sama sekali dianggap ok,
++      // tapi sesi yang sama sekali tidak ada tetap 404-kan supaya panitia
++      // tahu ID-nya salah / sudah terhapus.
++      const [sesi] = await sql`select id from sesi_tes where id = ${sesiId}`;
++      if (!sesi) return Response.json({ error: 'Sesi tidak ditemukan' }, { status: 404 });
++    }
+ 
+-  return Response.json({ rows });
++    return Response.json({ rows });
++  } catch (err) {
++    // Jaring pengaman: kalau ada error tak terduga (query gagal dll), tetap
++    // balas JSON yang valid -- supaya di klien tidak muncul error generik
++    // "Unexpected end of JSON input" yang tidak jelas sumbernya.
++    console.error('jawaban-mentah error:', err);
++    return Response.json({ error: 'Gagal mengambil data jawaban dari server.' }, { status: 500 });
++  }
+ }

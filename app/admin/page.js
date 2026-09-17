@@ -42,6 +42,17 @@ function csvEscape(v) {
   const s = String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
+// Parse JSON respons dengan aman -- kalau server error/crash dan balas body
+// kosong atau HTML (mis. halaman error 500 generik Vercel), `res.json()`
+// biasa akan lempar "Unexpected end of JSON input" yang membingungkan.
+// Helper ini menangkap itu dan mengubahnya jadi pesan yang jelas.
+async function resJson(res) {
+  try {
+    return await res.json();
+  } catch {
+    return { error: `Server merespons tanpa data yang valid (status ${res.status}). Coba lagi sebentar lagi.` };
+  }
+}
 function toCsv(rows, kolom) {
   const header = kolom.map(k => k.label).join(',');
   const body = rows.map(r => kolom.map(k => csvEscape(r[k.key])).join(',')).join('\n');
@@ -79,7 +90,7 @@ export default function AdminPage() {
     setError('');
     try {
       const res = await fetch('/api/admin/monitor', { headers: { 'x-panitia-pin': pinValue } });
-      const data = await res.json();
+      const data = await resJson(res);
       if (!res.ok) throw new Error(data.error || 'Gagal memuat data.');
       setRows(data.rows || []);
       setAuthed(true);
@@ -113,7 +124,7 @@ export default function AdminPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sesiId, dipaksaOleh: pin }),
       });
-      const data = await res.json();
+      const data = await resJson(res);
       if (!res.ok) throw new Error(data.error || 'Gagal memproses.');
       setActionMsg(`✓ Sesi "${nama}" berhasil diselesaikan.`);
       load(pin);
@@ -133,7 +144,7 @@ export default function AdminPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-panitia-pin': pin },
         body: JSON.stringify({ sesiId }),
       });
-      const data = await res.json();
+      const data = await resJson(res);
       if (!res.ok) throw new Error(data.error || 'Gagal membuka kunci.');
       setActionMsg(`✓ Sesi "${nama}" dibuka kembali.`);
       load(pin);
@@ -153,7 +164,7 @@ export default function AdminPage() {
         method: 'DELETE', headers: { 'Content-Type': 'application/json', 'x-panitia-pin': pin },
         body: JSON.stringify({ sesiId }),
       });
-      const data = await res.json();
+      const data = await resJson(res);
       if (!res.ok) throw new Error(data.error || 'Gagal menghapus sesi.');
       setActionMsg(`✓ Sesi "${nama}" berhasil dihapus.`);
       load(pin);
@@ -172,7 +183,7 @@ export default function AdminPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-panitia-pin': pin },
         body: JSON.stringify({ sesiId, ditandai: !ditandaiSaatIni }),
       });
-      const data = await res.json();
+      const data = await resJson(res);
       if (!res.ok) throw new Error(data.error || 'Gagal menandai sesi.');
       // update langsung di state biar tidak perlu tunggu refresh 15 detik
       setRows(prev => prev.map(r => r.sesi_id === sesiId ? { ...r, ditandai: data.ditandai } : r));
@@ -189,7 +200,7 @@ export default function AdminPage() {
     setActionMsg('');
     try {
       const res = await fetch(`/api/admin/jawaban-mentah?sesiId=${sesiId}`, { headers: { 'x-panitia-pin': pin } });
-      const data = await res.json();
+      const data = await resJson(res);
       if (!res.ok) throw new Error(data.error || 'Gagal mengambil jawaban.');
       if (!data.rows.length) { setActionMsg(`⚠️ Belum ada jawaban tersimpan untuk "${nama}".`); return; }
       unduhFile(`jawaban-mentah_${nama.replace(/\s+/g, '-')}.csv`, toCsv(data.rows, KOLOM_JAWABAN_MENTAH));
@@ -206,7 +217,7 @@ export default function AdminPage() {
     setActionMsg('');
     try {
       const res = await fetch('/api/admin/jawaban-mentah?semua=1', { headers: { 'x-panitia-pin': pin } });
-      const data = await res.json();
+      const data = await resJson(res);
       if (!res.ok) throw new Error(data.error || 'Gagal mengambil jawaban.');
       if (!data.rows.length) { setActionMsg('⚠️ Belum ada jawaban tersimpan sama sekali.'); return; }
       unduhFile('jawaban-mentah_semua-peserta.csv', toCsv(data.rows, KOLOM_JAWABAN_MENTAH));
