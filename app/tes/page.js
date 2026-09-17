@@ -1,6 +1,5 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { RIASEC_LABELS, GAYA_LABELS, BAKAT_LABELS } from '../../lib/labels';
 import { AMBANG_PELANGGARAN } from '../../lib/anti-curang';
 
 const API = '/api/attempt';
@@ -826,9 +825,6 @@ export default function TesPage() {
   }
 
   if (tahap === 'selesai') {
-    const h = hasilAkhir || {};
-    const domainLabel = { Verbal: 'Verbal', Numerik: 'Numerik', Figural: 'Figural', Memori: 'Memori' };
-
     return (
       <main className="page-wrap">
         <div className="shell">
@@ -838,73 +834,6 @@ export default function TesPage() {
               <h1>Tes Selesai</h1>
               <p>Terima kasih, <strong>{sesi?.nama}</strong>. Semua jawaban Anda sudah tersimpan.</p>
             </div>
-
-            {h.iq != null && (
-              <>
-                <div className="stat-grid">
-                  <div className="stat-tile">
-                    <div className="label">Estimasi IQ</div>
-                    <div className="value">{h.iq}</div>
-                  </div>
-                  <div className="stat-tile">
-                    <div className="label">Klasifikasi</div>
-                    <div className="value" style={{ fontSize: 15 }}>{h.iqClassification}</div>
-                  </div>
-                  <div className="stat-tile">
-                    <div className="label">Skor IST</div>
-                    <div className="value">{h.iqTotalCorrect}/{h.iqTotalMax} <span style={{ fontSize: 13, color: 'var(--t2)', fontWeight: 500 }}>({h.iqPercentage}%)</span></div>
-                  </div>
-                </div>
-
-                {h.iqDomain && (
-                  <>
-                    <div className="section-title">Kemampuan per Domain</div>
-                    {Object.entries(h.iqDomain).map(([k, v]) => (
-                      <BarRow key={k} label={domainLabel[k] || k} value={v} />
-                    ))}
-                  </>
-                )}
-              </>
-            )}
-
-            {h.riasecScores && (
-              <>
-                <div className="section-title">Minat (RIASEC)</div>
-                <div className="tag-row" style={{ marginBottom: 10 }}>
-                  <span className="tag">🎯 Kode dominan: {h.riasecTopCode}</span>
-                </div>
-                {Object.entries(h.riasecScores).map(([k, v]) => (
-                  <BarRow key={k} label={RIASEC_LABELS[k] || k} value={v} />
-                ))}
-              </>
-            )}
-
-            {h.gayaScores && (
-              <>
-                <div className="section-title">Gaya Belajar</div>
-                <div className="tag-row" style={{ marginBottom: 10 }}>
-                  <span className="tag">🎯 Dominan: {GAYA_LABELS[h.gayaDominant] || h.gayaDominant}</span>
-                </div>
-                {Object.entries(h.gayaScores).map(([k, v]) => (
-                  <BarRow key={k} label={GAYA_LABELS[k] || k} value={v} />
-                ))}
-              </>
-            )}
-
-            {h.bakatScores && (
-              <>
-                <div className="section-title">Bakat Diferensial</div>
-                <div className="tag-row" style={{ marginBottom: 10 }}>
-                  <span className="tag">🎯 Terkuat: {BAKAT_LABELS[h.bakatTop] || h.bakatTop}</span>
-                </div>
-                {Object.entries(h.bakatScores).map(([k, v]) => (
-                  <BarRow key={k} label={BAKAT_LABELS[k] || k} value={v} />
-                ))}
-                {h.bakatRekomendasi && (
-                  <div className="alert alert-info" style={{ marginTop: 10 }}>{h.bakatRekomendasi}</div>
-                )}
-              </>
-            )}
 
             <div className="divider" />
             <button
