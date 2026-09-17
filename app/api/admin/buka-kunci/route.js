@@ -23,7 +23,7 @@ export async function POST(req) {
   const { sesiId } = await req.json();
   const [row] = await sql`
     update sesi_tes
-    set status = 'mengerjakan', cheat_count = 0, heartbeat_at = now()
+    set status = 'mengerjakan', cheat_count = 0, percobaan_kunci_gagal = 0, heartbeat_at = now()
     where id = ${sesiId} and status = 'terkunci_pelanggaran'
     returning id
   `;

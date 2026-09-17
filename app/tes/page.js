@@ -120,6 +120,9 @@ export default function TesPage() {
   const [showPw, setShowPw] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [banner, setBanner] = useState(null); // {tone:'warn'|'info', text} — notifikasi pelanggaran/sesi ganda
+  const [kodeBuka, setKodeBuka] = useState('');
+  const [bukaError, setBukaError] = useState('');
+  const [bukaLoading, setBukaLoading] = useState(false);
   const sesiIdRef = useRef(null);
   const tabTokenRef = useRef(null);
 
@@ -225,6 +228,48 @@ export default function TesPage() {
     setBanner(null);
     setForm({ username: '', password: '', jenjang: 'smp' });
     setTahap('login');
+  }
+
+  // ---------- buka kunci mandiri (peserta masukkan kode dari panitia) ----------
+  // Alternatif tombol "Buka Kunci" di panel /admin -- panitia cukup
+  // mengucapkan/menuliskan KODE_BUKA_KUNCI_SENDIRI, peserta ketik sendiri di
+  // sini. Kalau berhasil, pulihkan layar tes persis seperti alur resume
+  // biasa (lihat efek "pulihkan sesi" di atas) supaya peserta langsung
+  // lanjut di bagian & sisa waktu yang benar, bukan balik ke welcome.
+  async function bukaKunciSendiri(e) {
+    e.preventDefault();
+    if (!kodeBuka.trim() || !sesiIdRef.current) return;
+    setBukaLoading(true);
+    setBukaError('');
+    try {
+      const res = await fetch(`${API}/buka-kunci-sendiri`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sesiId: sesiIdRef.current, kode: kodeBuka }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setBukaError(data.error || 'Kode salah.'); return; }
+
+      setKodeBuka('');
+      const r = await fetch(`${API}/resume?sesiId=${sesiIdRef.current}`);
+      const rd = await r.json();
+      if (rd.found && !rd.locked) {
+        if (rd.selesai) {
+          setSesi({ nama: rd.nama });
+          setHasilAkhir(rd.hasil);
+          setTahap('selesai');
+        } else {
+          setSesi({ nama: rd.nama, kelas: rd.kelas, sekolah: rd.sekolah });
+          const soalRes = await fetch(`${API}/soal?jenjang=${rd.jenjang}`);
+          const soalData = await soalRes.json();
+          setSections(soalData.sections);
+          terapkanStatus(rd.jenjang, rd.tahapKe, rd.tahapFase, rd.sisaDetik, rd.jawabanTersimpan, soalData.sections);
+        }
+      }
+    } catch {
+      setBukaError('Gagal terhubung ke server. Coba lagi.');
+    } finally {
+      setBukaLoading(false);
+    }
   }
 
   // ---------- login ----------
@@ -748,8 +793,28 @@ export default function TesPage() {
               fokus, menyalin/menempel teks, atau klik kanan) melebihi {AMBANG_PELANGGARAN} kali
               peringatan. Jawaban yang sudah tersimpan tidak hilang.
             </p>
+
+            <form onSubmit={bukaKunciSendiri} style={{ marginTop: 16, textAlign: 'left' }}>
+              <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--t2)' }}>
+                Punya kode buka-kunci dari panitia?
+              </label>
+              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                <input
+                  className="input" placeholder="Masukkan kode" value={kodeBuka}
+                  onChange={e => setKodeBuka(e.target.value)} disabled={bukaLoading}
+                  style={{ flex: 1 }}
+                />
+                <button type="submit" className="btn btn-navy btn-auto" disabled={bukaLoading || !kodeBuka.trim()}>
+                  {bukaLoading ? '...' : 'Buka'}
+                </button>
+              </div>
+              {bukaError && (
+                <p style={{ color: 'var(--red, #c0392b)', fontSize: 13, marginTop: 8 }}>{bukaError}</p>
+              )}
+            </form>
+
             <div className="alert alert-error" style={{ marginTop: 16, textAlign: 'left' }}>
-              <span>Silakan hubungi panitia pengawas untuk membuka kembali atau menyelesaikan tes ini.</span>
+              <span>Belum punya kode? Silakan hubungi panitia pengawas untuk membuka kembali atau menyelesaikan tes ini.</span>
             </div>
             <button className="btn btn-outline btn-auto" style={{ marginTop: 16 }} onClick={gantiAkun}>
               Keluar

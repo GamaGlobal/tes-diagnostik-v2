@@ -1,0 +1,838 @@
+diff --git a/.env.example b/.env.example
+index 676cf6a..b3d67cf 100644
+--- a/.env.example
++++ b/.env.example
+@@ -7,3 +7,14 @@ DATABASE_URL=postgresql://neondb_owner:npg_xpXmv8qVh6ru@ep-red-flower-b3pvaq65-p
+ #    tersimpan di sesi_tes.finalized_by supaya ada jejak siapa yang memaksa
+ #    selesaikan sesi siswa)
+ PANITIA_PIN=ganti-ini
++
++# Kode buka-kunci-mandiri — SENGAJA dipisah dari PANITIA_PIN di atas.
++# Ini kode pendek yang boleh diumumkan/diucapkan panitia di ruangan tes saat
++# ada peserta yang terkunci karena pelanggaran (pindah tab dll), supaya
++# peserta bisa membuka kunci di HP-nya SENDIRI (lihat layar "Tes Dikunci
++# Sistem" di app/tes) tanpa panitia harus buka laptop/panel /admin satu-satu.
++# Beda dari PANITIA_PIN karena kode ini akan diketahui banyak peserta
++# sekaligus -- jangan pakai PIN admin yang sama supaya akses ke panel
++# /admin (yang bisa hapus data dll) tidak ikut bocor.
++# Ganti kode ini tiap sesi ujian kalau perlu (mis. tiap hari/tiap sesi ujian).
++KODE_BUKA_KUNCI_SENDIRI=ganti-ini-juga
+diff --git a/app/admin/page.js b/app/admin/page.js
+index a10a95d..6dec537 100644
+--- a/app/admin/page.js
++++ b/app/admin/page.js
+@@ -36,6 +36,32 @@ function ringkasPelanggaran(rincian) {
+     .join('\n');
+ }
+ 
++// ── util CSV / download (dipakai fitur "Unduh Jawaban Mentah") ─────────
++function csvEscape(v) {
++  if (v === null || v === undefined) return '';
++  const s = String(v);
++  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
++}
++function toCsv(rows, kolom) {
++  const header = kolom.map(k => k.label).join(',');
++  const body = rows.map(r => kolom.map(k => csvEscape(r[k.key])).join(',')).join('\n');
++  return `${header}\n${body}`;
++}
++function unduhFile(nama, isi, mime = 'text/csv;charset=utf-8;') {
++  const blob = new Blob(['\uFEFF' + isi], { type: mime }); // BOM biar Excel baca UTF-8 dgn benar
++  const url = URL.createObjectURL(blob);
++  const a = document.createElement('a');
++  a.href = url; a.download = nama;
++  document.body.appendChild(a); a.click(); document.body.removeChild(a);
++  URL.revokeObjectURL(url);
++}
++const KOLOM_JAWABAN_MENTAH = [
++  { key: 'nama', label: 'Nama' }, { key: 'kelas', label: 'Kelas' }, { key: 'sekolah', label: 'Sekolah' },
++  { key: 'jenjang', label: 'Jenjang' }, { key: 'status', label: 'Status Sesi' }, { key: 'sesi_id', label: 'Sesi ID' },
++  { key: 'kode_soal', label: 'Kode Soal' }, { key: 'kategori', label: 'Kategori' }, { key: 'sub_kategori', label: 'Sub Kategori' },
++  { key: 'jawaban_teks', label: 'Jawaban' }, { key: 'benar', label: 'Benar' }, { key: 'dijawab_at', label: 'Dijawab Pada' },
++];
++
+ export default function AdminPage() {
+   const [pin, setPin] = useState('');
+   const [authed, setAuthed] = useState(false);
+@@ -118,6 +144,80 @@ export default function AdminPage() {
+     }
+   };
+ 
++  const hapusSesi = async (sesiId, nama) => {
++    if (!confirm(`Hapus PERMANEN sesi milik "${nama}"?\n\nSemua jawaban, hasil, dan riwayat pelanggaran sesi ini akan ikut terhapus dan TIDAK BISA dikembalikan. Pakai ini untuk entri salah-input / dobel / uji-coba, bukan untuk menyembunyikan hasil siswa yang sah.`)) return;
++    setActionLoading(sesiId);
++    setActionMsg('');
++    try {
++      const res = await fetch('/api/admin/hapus-sesi', {
++        method: 'DELETE', headers: { 'Content-Type': 'application/json', 'x-panitia-pin': pin },
++        body: JSON.stringify({ sesiId }),
++      });
++      const data = await res.json();
++      if (!res.ok) throw new Error(data.error || 'Gagal menghapus sesi.');
++      setActionMsg(`✓ Sesi "${nama}" berhasil dihapus.`);
++      load(pin);
++    } catch (e) {
++      setActionMsg(`⚠️ ${e.message}`);
++    } finally {
++      setActionLoading(null);
++    }
++  };
++
++  const toggleTandai = async (sesiId, nama, ditandaiSaatIni) => {
++    setActionLoading(sesiId);
++    setActionMsg('');
++    try {
++      const res = await fetch('/api/admin/tandai', {
++        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-panitia-pin': pin },
++        body: JSON.stringify({ sesiId, ditandai: !ditandaiSaatIni }),
++      });
++      const data = await res.json();
++      if (!res.ok) throw new Error(data.error || 'Gagal menandai sesi.');
++      // update langsung di state biar tidak perlu tunggu refresh 15 detik
++      setRows(prev => prev.map(r => r.sesi_id === sesiId ? { ...r, ditandai: data.ditandai } : r));
++      setActionMsg(data.ditandai ? `🚩 "${nama}" ditandai untuk ditinjau.` : `✓ Tanda pada "${nama}" dihapus.`);
++    } catch (e) {
++      setActionMsg(`⚠️ ${e.message}`);
++    } finally {
++      setActionLoading(null);
++    }
++  };
++
++  const unduhJawaban = async (sesiId, nama) => {
++    setActionLoading(sesiId);
++    setActionMsg('');
++    try {
++      const res = await fetch(`/api/admin/jawaban-mentah?sesiId=${sesiId}`, { headers: { 'x-panitia-pin': pin } });
++      const data = await res.json();
++      if (!res.ok) throw new Error(data.error || 'Gagal mengambil jawaban.');
++      if (!data.rows.length) { setActionMsg(`⚠️ Belum ada jawaban tersimpan untuk "${nama}".`); return; }
++      unduhFile(`jawaban-mentah_${nama.replace(/\s+/g, '-')}.csv`, toCsv(data.rows, KOLOM_JAWABAN_MENTAH));
++      setActionMsg(`✓ Jawaban mentah "${nama}" diunduh.`);
++    } catch (e) {
++      setActionMsg(`⚠️ ${e.message}`);
++    } finally {
++      setActionLoading(null);
++    }
++  };
++
++  const unduhSemuaJawaban = async () => {
++    setActionLoading('__semua__');
++    setActionMsg('');
++    try {
++      const res = await fetch('/api/admin/jawaban-mentah?semua=1', { headers: { 'x-panitia-pin': pin } });
++      const data = await res.json();
++      if (!res.ok) throw new Error(data.error || 'Gagal mengambil jawaban.');
++      if (!data.rows.length) { setActionMsg('⚠️ Belum ada jawaban tersimpan sama sekali.'); return; }
++      unduhFile('jawaban-mentah_semua-peserta.csv', toCsv(data.rows, KOLOM_JAWABAN_MENTAH));
++      setActionMsg(`✓ Jawaban mentah ${data.rows.length} baris (semua peserta) diunduh.`);
++    } catch (e) {
++      setActionMsg(`⚠️ ${e.message}`);
++    } finally {
++      setActionLoading(null);
++    }
++  };
++
+   const mengerjakan = useMemo(() => rows.filter(r => r.status === 'mengerjakan' || r.status === 'terkunci_pelanggaran'), [rows]);
+   const selesai = useMemo(() => rows.filter(r => r.status !== 'mengerjakan' && r.status !== 'terkunci_pelanggaran'), [rows]);
+ 
+@@ -174,10 +274,13 @@ export default function AdminPage() {
+             <div className="admin-title">📊 Live Monitor — Simulasi Tes IST</div>
+             {lastLoad && <div className="muted">Diperbarui otomatis · terakhir {lastLoad.toLocaleTimeString('id-ID')}</div>}
+           </div>
+-          <div style={{ display: 'flex', gap: 8 }}>
++          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+             <button className="btn btn-outline btn-auto btn-sm" onClick={() => load(pin)} disabled={loading}>
+               {loading ? '⏳ Memuat...' : '🔄 Refresh'}
+             </button>
++            <button className="btn btn-outline btn-auto btn-sm" onClick={unduhSemuaJawaban} disabled={actionLoading === '__semua__'}>
++              {actionLoading === '__semua__' ? '⏳ Menyiapkan...' : '⬇️ Unduh Semua Jawaban Mentah'}
++            </button>
+             <input
+               className="search-input" placeholder="Cari nama / kelas / sekolah..."
+               value={search} onChange={e => setSearch(e.target.value)}
+@@ -237,7 +340,17 @@ export default function AdminPage() {
+                   const aktif = detik < AMBANG_AKTIF_DETIK;
+                   return (
+                     <tr key={r.sesi_id} className={ditinggal ? 'row-stale' : ''}>
+-                      <td style={{ fontWeight: 600 }}>{r.nama}</td>
++                      <td style={{ fontWeight: 600 }}>
++                        <button
++                          title={r.ditandai ? 'Hapus tanda' : 'Tandai untuk ditinjau'}
++                          onClick={() => toggleTandai(r.sesi_id, r.nama, r.ditandai)}
++                          disabled={actionLoading === r.sesi_id}
++                          style={{ background: 'none', border: 'none', cursor: 'pointer', marginRight: 4, fontSize: 14 }}
++                        >
++                          {r.ditandai ? '🚩' : '🏳️'}
++                        </button>
++                        {r.nama}
++                      </td>
+                       <td>{r.kelas || '-'}</td>
+                       <td>{r.sekolah}</td>
+                       <td style={{ textTransform: 'uppercase' }}>{r.jenjang}</td>
+@@ -278,6 +391,14 @@ export default function AdminPage() {
+                           >
+                             {actionLoading === r.sesi_id ? '...' : 'Paksa Selesaikan'}
+                           </button>
++                          <button
++                            className="btn btn-outline btn-sm btn-auto"
++                            disabled={actionLoading === r.sesi_id}
++                            onClick={() => hapusSesi(r.sesi_id, r.nama)}
++                            title="Hapus sesi ini beserta jawabannya"
++                          >
++                            {actionLoading === r.sesi_id ? '...' : '🗑️ Hapus'}
++                          </button>
+                         </div>
+                       </td>
+                     </tr>
+@@ -298,33 +419,78 @@ export default function AdminPage() {
+             <table className="data-table">
+               <thead>
+                 <tr>
+-                  {['Nama', 'Kelas', 'Sekolah', 'Status', 'Level IQ', 'Skor IST', 'Est. IQ', 'RIASEC', 'Gaya', 'Bakat', 'Selesai'].map(h => (
++                  {['Nama', 'Kelas', 'Sekolah', 'Status', 'Level IQ', 'Skor IST', 'Est. IQ', 'RIASEC', 'Gaya', 'Bakat', 'Selesai', 'Aksi'].map(h => (
+                     <th key={h}>{h}</th>
+                   ))}
+                 </tr>
+               </thead>
+               <tbody>
+-                {selesaiTampil.map(r => (
+-                  <tr key={r.sesi_id}>
+-                    <td style={{ fontWeight: 600 }}>{r.nama}</td>
+-                    <td>{r.kelas || '-'}</td>
+-                    <td>{r.sekolah}</td>
+-                    <td>
+-                      <span className={`badge ${r.status === 'selesai_paksa_panitia' ? 'badge-gold' : 'badge-green'}`}>
+-                        {STATUS_LABEL[r.status] || r.status}
+-                      </span>
+-                    </td>
+-                    <td>{r.level_ist || '-'}</td>
+-                    <td>{r.persentase != null ? `${r.persentase}%` : '-'}</td>
+-                    <td>{r.estimasi_iq ?? '-'}</td>
+-                    <td>{r.riasec_top || '-'}</td>
+-                    <td>{r.gaya_dominant || '-'}</td>
+-                    <td>{r.bakat_top || '-'}</td>
+-                    <td className="muted">{fmtWaktu(r.selesai_at)}</td>
+-                  </tr>
+-                ))}
++                {selesaiTampil.map(r => {
++                  const tidakLengkap = r.lengkap === false;
++                  return (
++                    <tr key={r.sesi_id} className={tidakLengkap ? 'row-stale' : ''}>
++                      <td style={{ fontWeight: 600 }}>
++                        <button
++                          title={r.ditandai ? 'Hapus tanda' : 'Tandai untuk ditinjau'}
++                          onClick={() => toggleTandai(r.sesi_id, r.nama, r.ditandai)}
++                          disabled={actionLoading === r.sesi_id}
++                          style={{ background: 'none', border: 'none', cursor: 'pointer', marginRight: 4, fontSize: 14 }}
++                        >
++                          {r.ditandai ? '🚩' : '🏳️'}
++                        </button>
++                        {r.nama}
++                      </td>
++                      <td>{r.kelas || '-'}</td>
++                      <td>{r.sekolah}</td>
++                      <td>
++                        <span className={`badge ${r.status === 'selesai_paksa_panitia' ? 'badge-gold' : 'badge-green'}`}>
++                          {STATUS_LABEL[r.status] || r.status}
++                        </span>
++                        {tidakLengkap && (
++                          <div>
++                            <span className="badge badge-red" style={{ marginTop: 4 }} title="Sesi diselesaikan sebelum semua soal dijawab -- skor di bawah ini dihitung dari soal yang sempat terjawab saja, dari total soal yang seharusnya.">
++                              <span className="dot" />⚠️ Tidak lengkap
++                            </span>
++                          </div>
++                        )}
++                      </td>
++                      <td>{r.level_ist || '-'}</td>
++                      <td>
++                        {r.persentase != null ? `${r.persentase}%` : '-'}
++                        {r.total_soal != null && (
++                          <div className="muted" style={{ fontSize: 11 }}>({r.total_benar ?? 0}/{r.total_soal} benar)</div>
++                        )}
++                      </td>
++                      <td>{r.estimasi_iq ?? '-'}</td>
++                      <td>{r.riasec_top || '-'}</td>
++                      <td>{r.gaya_dominant || '-'}</td>
++                      <td>{r.bakat_top || '-'}</td>
++                      <td className="muted">{fmtWaktu(r.selesai_at)}</td>
++                      <td>
++                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
++                          <button
++                            className="btn btn-outline btn-sm btn-auto"
++                            disabled={actionLoading === r.sesi_id}
++                            onClick={() => unduhJawaban(r.sesi_id, r.nama)}
++                            title="Unduh jawaban mentah sesi ini (CSV)"
++                          >
++                            {actionLoading === r.sesi_id ? '...' : '⬇️ Jawaban'}
++                          </button>
++                          <button
++                            className="btn btn-danger btn-sm btn-auto"
++                            disabled={actionLoading === r.sesi_id}
++                            onClick={() => hapusSesi(r.sesi_id, r.nama)}
++                            title="Hapus sesi ini beserta jawaban & hasilnya"
++                          >
++                            {actionLoading === r.sesi_id ? '...' : '🗑️ Hapus'}
++                          </button>
++                        </div>
++                      </td>
++                    </tr>
++                  );
++                })}
+                 {!selesaiTampil.length && (
+-                  <tr><td colSpan={11} style={{ textAlign: 'center', color: 'var(--t2)', padding: 20 }}>
++                  <tr><td colSpan={12} style={{ textAlign: 'center', color: 'var(--t2)', padding: 20 }}>
+                     {selesai.length ? 'Tidak ada yang cocok dengan pencarian.' : 'Belum ada peserta yang menyelesaikan tes.'}
+                   </td></tr>
+                 )}
+diff --git a/app/api/admin/buka-kunci/route.js b/app/api/admin/buka-kunci/route.js
+index 400ec10..868e1fc 100644
+--- a/app/api/admin/buka-kunci/route.js
++++ b/app/api/admin/buka-kunci/route.js
+@@ -23,7 +23,7 @@ export async function POST(req) {
+   const { sesiId } = await req.json();
+   const [row] = await sql`
+     update sesi_tes
+-    set status = 'mengerjakan', cheat_count = 0, heartbeat_at = now()
++    set status = 'mengerjakan', cheat_count = 0, percobaan_kunci_gagal = 0, heartbeat_at = now()
+     where id = ${sesiId} and status = 'terkunci_pelanggaran'
+     returning id
+   `;
+diff --git a/app/api/admin/hapus-sesi/route.js b/app/api/admin/hapus-sesi/route.js
+new file mode 100644
+index 0000000..aff738a
+--- /dev/null
++++ b/app/api/admin/hapus-sesi/route.js
+@@ -0,0 +1,29 @@
++// DELETE /api/admin/hapus-sesi
++// Header: x-panitia-pin (sama seperti endpoint admin lain)
++// Body: { sesiId }
++//
++// Menghapus sesi (mis. entri salah-input, siswa dobel klik "Mulai", data
++// tes coba-coba panitia sendiri, dll). `on delete cascade` di skema
++// (lihat db/001_schema.sql) otomatis ikut menghapus baris terkait di
++// `jawaban`, `hasil`, dan `pelanggaran` -- jadi tidak ada sisa data yatim.
++//
++// SENGAJA tidak ada "undo": panitia diminta konfirmasi dulu di sisi klien
++// (lihat app/admin/page.js) sebelum memanggil endpoint ini.
++import { sql } from '../../../../lib/db';
++
++export async function DELETE(req) {
++  const pin = req.headers.get('x-panitia-pin');
++  if (!pin || pin !== process.env.PANITIA_PIN) {
++    return Response.json({ error: 'PIN panitia salah' }, { status: 401 });
++  }
++
++  const { sesiId } = await req.json();
++  if (!sesiId) return Response.json({ error: 'sesiId wajib diisi' }, { status: 400 });
++
++  const [row] = await sql`
++    delete from sesi_tes where id = ${sesiId} returning id
++  `;
++  if (!row) return Response.json({ error: 'Sesi tidak ditemukan' }, { status: 404 });
++
++  return Response.json({ ok: true });
++}
+diff --git a/app/api/admin/jawaban-mentah/route.js b/app/api/admin/jawaban-mentah/route.js
+new file mode 100644
+index 0000000..1806e11
+--- /dev/null
++++ b/app/api/admin/jawaban-mentah/route.js
+@@ -0,0 +1,46 @@
++// GET /api/admin/jawaban-mentah?sesiId=<uuid>   -> jawaban mentah 1 sesi
++// GET /api/admin/jawaban-mentah?semua=1          -> jawaban mentah SEMUA sesi
++// Header: x-panitia-pin (sama seperti endpoint admin lain)
++//
++// Dipakai tombol "Unduh Jawaban" di panel /admin (lihat app/admin/page.js) --
++// mengembalikan baris jawaban APA ADANYA dari tabel `jawaban` (dijoin info
++// siswa & soal secukupnya untuk konteks), supaya panitia bisa mengecek
++// manual kalau perlu, di luar skor yang sudah dihitung sistem.
++import { sql } from '../../../../lib/db';
++
++export async function GET(req) {
++  const pin = req.headers.get('x-panitia-pin');
++  if (!pin || pin !== process.env.PANITIA_PIN) {
++    return Response.json({ error: 'PIN panitia salah' }, { status: 401 });
++  }
++
++  const { searchParams } = new URL(req.url);
++  const sesiId = searchParams.get('sesiId');
++  const semua = searchParams.get('semua') === '1';
++
++  if (!sesiId && !semua) {
++    return Response.json({ error: 'sesiId atau semua=1 wajib diisi' }, { status: 400 });
++  }
++
++  const rows = await sql`
++    select
++      s.id as sesi_id, si.nama, si.kelas, si.sekolah, s.jenjang, s.status,
++      j.kode_soal, b.kategori, b.sub_kategori, j.jawaban_teks, j.benar, j.dijawab_at
++    from jawaban j
++    join sesi_tes s on s.id = j.sesi_id
++    join siswa si on si.username = s.username
++    join bank_soal b on b.kode_soal = j.kode_soal
++    where ${semua ? sql`true` : sql`j.sesi_id = ${sesiId}`}
++    order by si.nama, j.sesi_id, b.kategori, b.urutan
++  `;
++
++  if (!semua && !rows.length) {
++    // sesi valid tapi belum ada jawaban tersimpan sama sekali dianggap ok,
++    // tapi sesi yang sama sekali tidak ada tetap 404-kan supaya panitia
++    // tahu ID-nya salah / sudah terhapus.
++    const [sesi] = await sql`select id from sesi_tes where id = ${sesiId}`;
++    if (!sesi) return Response.json({ error: 'Sesi tidak ditemukan' }, { status: 404 });
++  }
++
++  return Response.json({ rows });
++}
+diff --git a/app/api/admin/monitor/route.js b/app/api/admin/monitor/route.js
+index 97f16c7..4f7102e 100644
+--- a/app/api/admin/monitor/route.js
++++ b/app/api/admin/monitor/route.js
+@@ -19,9 +19,9 @@ export async function GET(req) {
+       select
+         s.id as sesi_id, s.username, si.nama, si.kelas, si.sekolah,
+         s.jenjang, s.status, s.tahap_ke, s.total_tahap, s.cheat_count,
+-        s.mulai_at, s.heartbeat_at, s.selesai_at,
++        s.mulai_at, s.heartbeat_at, s.selesai_at, s.ditandai, s.catatan_panitia,
+         (select count(*)::int from jawaban j where j.sesi_id = s.id) as jumlah_terjawab,
+-        h.level_ist, h.persentase, h.estimasi_iq,
++        h.level_ist, h.persentase, h.estimasi_iq, h.total_benar, h.total_soal, h.lengkap,
+         h.riasec ->> 'topCode' as riasec_top,
+         h.gaya_belajar ->> 'dominant' as gaya_dominant,
+         h.bakat ->> 'top' as bakat_top,
+diff --git a/app/api/admin/tandai/route.js b/app/api/admin/tandai/route.js
+new file mode 100644
+index 0000000..aa6aaf6
+--- /dev/null
++++ b/app/api/admin/tandai/route.js
+@@ -0,0 +1,26 @@
++// POST /api/admin/tandai
++// Header: x-panitia-pin (sama seperti endpoint admin lain)
++// Body: { sesiId, ditandai }
++//
++// Menandai (flag) sesi tertentu untuk ditinjau ulang panitia nanti -- mis.
++// hasil yang tampak janggal, siswa yang perlu dipantau, dll. Ini murni
++// penanda visual di panel admin (kolom `ditandai` di sesi_tes, lihat
++// db/007_fitur_admin_tambahan.sql), tidak memengaruhi skor / status tes.
++import { sql } from '../../../../lib/db';
++
++export async function POST(req) {
++  const pin = req.headers.get('x-panitia-pin');
++  if (!pin || pin !== process.env.PANITIA_PIN) {
++    return Response.json({ error: 'PIN panitia salah' }, { status: 401 });
++  }
++
++  const { sesiId, ditandai } = await req.json();
++  if (!sesiId) return Response.json({ error: 'sesiId wajib diisi' }, { status: 400 });
++
++  const [row] = await sql`
++    update sesi_tes set ditandai = ${!!ditandai} where id = ${sesiId} returning id, ditandai
++  `;
++  if (!row) return Response.json({ error: 'Sesi tidak ditemukan' }, { status: 404 });
++
++  return Response.json({ ok: true, ditandai: row.ditandai });
++}
+diff --git a/app/api/attempt/buka-kunci-sendiri/route.js b/app/api/attempt/buka-kunci-sendiri/route.js
+new file mode 100644
+index 0000000..1411865
+--- /dev/null
++++ b/app/api/attempt/buka-kunci-sendiri/route.js
+@@ -0,0 +1,59 @@
++// POST /api/attempt/buka-kunci-sendiri
++// Body: { sesiId, kode }
++// TANPA header PIN -- ini dipanggil dari HP peserta sendiri di layar
++// "Tes Dikunci Sistem" (lihat app/tes/page.js), bukan dari panel /admin.
++//
++// Alternatif yang lebih ringan daripada panitia harus buka laptop & panel
++// /admin satu per satu tiap ada peserta kena kunci pelanggaran: panitia
++// cukup mengumumkan/membisikkan KODE_BUKA_KUNCI_SENDIRI (lihat
++// .env.example -- SENGAJA beda dari PANITIA_PIN supaya akses ke panel admin
++// tidak ikut bocor ke seluruh ruangan), peserta ketik sendiri kodenya.
++//
++// Percobaan salah dibatasi (AMBANG_PERCOBAAN_KODE, lib/anti-curang.js) per
++// sesi supaya tidak bisa ditebak asal-asalan -- begitu limit habis, peserta
++// wajib minta panitia buka lewat panel /admin (endpoint terpisah,
++// /api/admin/buka-kunci, yang masih selalu tersedia sebagai jalur cadangan).
++import { sql } from '../../../../lib/db';
++import { AMBANG_PERCOBAAN_KODE } from '../../../../lib/anti-curang';
++
++export async function POST(req) {
++  const { sesiId, kode } = await req.json();
++  if (!sesiId || !kode) {
++    return Response.json({ error: 'sesiId dan kode wajib diisi' }, { status: 400 });
++  }
++
++  const [sesi] = await sql`
++    select id, status, percobaan_kunci_gagal from sesi_tes where id = ${sesiId}
++  `;
++  if (!sesi) return Response.json({ error: 'Sesi tidak ditemukan' }, { status: 404 });
++  if (sesi.status !== 'terkunci_pelanggaran') {
++    return Response.json({ error: 'Sesi ini sedang tidak dalam status terkunci' }, { status: 409 });
++  }
++  if (sesi.percobaan_kunci_gagal >= AMBANG_PERCOBAAN_KODE) {
++    return Response.json({
++      error: `Sudah ${AMBANG_PERCOBAAN_KODE}x salah memasukkan kode. Silakan minta panitia membuka lewat panel admin.`,
++      habis: true,
++    }, { status: 429 });
++  }
++
++  const kodeBenar = (process.env.KODE_BUKA_KUNCI_SENDIRI || '').trim();
++  if (!kodeBenar || kode.trim() !== kodeBenar) {
++    const [row] = await sql`
++      update sesi_tes set percobaan_kunci_gagal = percobaan_kunci_gagal + 1
++      where id = ${sesiId} returning percobaan_kunci_gagal
++    `;
++    const sisa = Math.max(0, AMBANG_PERCOBAAN_KODE - row.percobaan_kunci_gagal);
++    return Response.json({
++      error: sisa > 0 ? `Kode salah. Sisa ${sisa}x percobaan.` : `Kode salah. Percobaan habis, minta panitia buka lewat panel admin.`,
++      sisaPercobaan: sisa,
++    }, { status: 401 });
++  }
++
++  await sql`
++    update sesi_tes
++    set status = 'mengerjakan', cheat_count = 0, percobaan_kunci_gagal = 0, heartbeat_at = now()
++    where id = ${sesiId}
++  `;
++
++  return Response.json({ ok: true });
++}
+diff --git a/app/api/attempt/finish/route.js b/app/api/attempt/finish/route.js
+index d52cfb6..0a13c55 100644
+--- a/app/api/attempt/finish/route.js
++++ b/app/api/attempt/finish/route.js
+@@ -20,11 +20,37 @@ export async function POST(req) {
+     where j.sesi_id = ${sesiId}
+   `;
+ 
+-  const hasil = computeHasil(rows, sesi.jenjang);
++  // Total soal yang SEBENARNYA ditugaskan untuk jenjang ini (dipakai sebagai
++  // penyebut skor di computeHasil, lihat komentar di lib/scoring.js) — bukan
++  // cuma yang sempat dijawab. Untuk BAKAT dipecah per sub_kategori karena tiap
++  // sub-tes (MIPA/IPS/BHS/dst.) punya jumlah soal & bobot sendiri-sendiri.
++  const totalRows = await sql`
++    select kategori, sub_kategori, count(*)::int as total
++    from bank_soal
++    where jenjang = ${sesi.jenjang} or jenjang = 'semua'
++    group by kategori, sub_kategori
++  `;
++  const totalPerKategori = {};
++  for (const r of totalRows) {
++    if (r.kategori === 'BAKAT') {
++      totalPerKategori[`BAKAT_${r.sub_kategori}`] = (totalPerKategori[`BAKAT_${r.sub_kategori}`] || 0) + r.total;
++    } else {
++      totalPerKategori[r.kategori] = (totalPerKategori[r.kategori] || 0) + r.total;
++    }
++  }
++
++  const hasil = computeHasil(rows, sesi.jenjang, totalPerKategori);
++
++  // `lengkap`: false kalau ADA bagian (IST atau BAKAT) yang belum dijawab
++  // penuh sesuai jumlah soal yang seharusnya. Kalau salah satu bagian tidak
++  // pernah dimuat sama sekali (mis. dipaksa selesai sebelum tes bakat
++  // dibuka), hasil.bakatLengkap akan undefined -- itu juga dihitung sebagai
++  // "belum lengkap", supaya panitia tidak salah kira hasilnya utuh.
++  const lengkap = (hasil.iqLengkap ?? true) && (hasil.bakatLengkap ?? true);
+ 
+   await sql`
+     insert into hasil (sesi_id, level_ist, subskor, riasec, gaya_belajar, bakat,
+-                        total_benar, total_soal, persentase, estimasi_iq, sumber)
++                        total_benar, total_soal, persentase, estimasi_iq, sumber, lengkap)
+     values (
+       ${sesiId}, ${hasil.iqClassification || null},
+       ${hasil.iqScores ? JSON.stringify(hasil.iqScores) : null}::jsonb,
+@@ -32,14 +58,14 @@ export async function POST(req) {
+       ${hasil.gayaScores ? JSON.stringify({ scores: hasil.gayaScores, dominant: hasil.gayaDominant }) : null}::jsonb,
+       ${hasil.bakatScores ? JSON.stringify({ scores: hasil.bakatScores, top: hasil.bakatTop, rekomendasi: hasil.bakatRekomendasi }) : null}::jsonb,
+       ${hasil.iqTotalCorrect ?? null}, ${hasil.iqTotalMax ?? null}, ${hasil.iqPercentage ?? null}, ${hasil.iq ?? null},
+-      ${dipaksaOleh ? 'manual_panitia' : 'auto'}
++      ${dipaksaOleh ? 'manual_panitia' : 'auto'}, ${lengkap}
+     )
+     on conflict (sesi_id) do update set
+       level_ist = excluded.level_ist, subskor = excluded.subskor,
+       riasec = excluded.riasec, gaya_belajar = excluded.gaya_belajar, bakat = excluded.bakat,
+       total_benar = excluded.total_benar, total_soal = excluded.total_soal,
+       persentase = excluded.persentase, estimasi_iq = excluded.estimasi_iq,
+-      sumber = excluded.sumber, dihitung_at = now()
++      sumber = excluded.sumber, lengkap = excluded.lengkap, dihitung_at = now()
+   `;
+ 
+   await sql`
+diff --git a/app/tes/page.js b/app/tes/page.js
+index 139dedc..0ddb67d 100644
+--- a/app/tes/page.js
++++ b/app/tes/page.js
+@@ -120,6 +120,9 @@ export default function TesPage() {
+   const [showPw, setShowPw] = useState(false);
+   const [checkingSession, setCheckingSession] = useState(true);
+   const [banner, setBanner] = useState(null); // {tone:'warn'|'info', text} — notifikasi pelanggaran/sesi ganda
++  const [kodeBuka, setKodeBuka] = useState('');
++  const [bukaError, setBukaError] = useState('');
++  const [bukaLoading, setBukaLoading] = useState(false);
+   const sesiIdRef = useRef(null);
+   const tabTokenRef = useRef(null);
+ 
+@@ -227,6 +230,48 @@ export default function TesPage() {
+     setTahap('login');
+   }
+ 
++  // ---------- buka kunci mandiri (peserta masukkan kode dari panitia) ----------
++  // Alternatif tombol "Buka Kunci" di panel /admin -- panitia cukup
++  // mengucapkan/menuliskan KODE_BUKA_KUNCI_SENDIRI, peserta ketik sendiri di
++  // sini. Kalau berhasil, pulihkan layar tes persis seperti alur resume
++  // biasa (lihat efek "pulihkan sesi" di atas) supaya peserta langsung
++  // lanjut di bagian & sisa waktu yang benar, bukan balik ke welcome.
++  async function bukaKunciSendiri(e) {
++    e.preventDefault();
++    if (!kodeBuka.trim() || !sesiIdRef.current) return;
++    setBukaLoading(true);
++    setBukaError('');
++    try {
++      const res = await fetch(`${API}/buka-kunci-sendiri`, {
++        method: 'POST', headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ sesiId: sesiIdRef.current, kode: kodeBuka }),
++      });
++      const data = await res.json();
++      if (!res.ok) { setBukaError(data.error || 'Kode salah.'); return; }
++
++      setKodeBuka('');
++      const r = await fetch(`${API}/resume?sesiId=${sesiIdRef.current}`);
++      const rd = await r.json();
++      if (rd.found && !rd.locked) {
++        if (rd.selesai) {
++          setSesi({ nama: rd.nama });
++          setHasilAkhir(rd.hasil);
++          setTahap('selesai');
++        } else {
++          setSesi({ nama: rd.nama, kelas: rd.kelas, sekolah: rd.sekolah });
++          const soalRes = await fetch(`${API}/soal?jenjang=${rd.jenjang}`);
++          const soalData = await soalRes.json();
++          setSections(soalData.sections);
++          terapkanStatus(rd.jenjang, rd.tahapKe, rd.tahapFase, rd.sisaDetik, rd.jawabanTersimpan, soalData.sections);
++        }
++      }
++    } catch {
++      setBukaError('Gagal terhubung ke server. Coba lagi.');
++    } finally {
++      setBukaLoading(false);
++    }
++  }
++
+   // ---------- login ----------
+   async function handleLogin(e) {
+     e.preventDefault();
+@@ -748,8 +793,28 @@ export default function TesPage() {
+               fokus, menyalin/menempel teks, atau klik kanan) melebihi {AMBANG_PELANGGARAN} kali
+               peringatan. Jawaban yang sudah tersimpan tidak hilang.
+             </p>
++
++            <form onSubmit={bukaKunciSendiri} style={{ marginTop: 16, textAlign: 'left' }}>
++              <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--t2)' }}>
++                Punya kode buka-kunci dari panitia?
++              </label>
++              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
++                <input
++                  className="input" placeholder="Masukkan kode" value={kodeBuka}
++                  onChange={e => setKodeBuka(e.target.value)} disabled={bukaLoading}
++                  style={{ flex: 1 }}
++                />
++                <button type="submit" className="btn btn-navy btn-auto" disabled={bukaLoading || !kodeBuka.trim()}>
++                  {bukaLoading ? '...' : 'Buka'}
++                </button>
++              </div>
++              {bukaError && (
++                <p style={{ color: 'var(--red, #c0392b)', fontSize: 13, marginTop: 8 }}>{bukaError}</p>
++              )}
++            </form>
++
+             <div className="alert alert-error" style={{ marginTop: 16, textAlign: 'left' }}>
+-              <span>Silakan hubungi panitia pengawas untuk membuka kembali atau menyelesaikan tes ini.</span>
++              <span>Belum punya kode? Silakan hubungi panitia pengawas untuk membuka kembali atau menyelesaikan tes ini.</span>
+             </div>
+             <button className="btn btn-outline btn-auto" style={{ marginTop: 16 }} onClick={gantiAkun}>
+               Keluar
+diff --git a/db/007_fitur_admin_tambahan.sql b/db/007_fitur_admin_tambahan.sql
+new file mode 100644
+index 0000000..2d9f1ff
+--- /dev/null
++++ b/db/007_fitur_admin_tambahan.sql
+@@ -0,0 +1,20 @@
++-- ============================================================
++-- 007: fitur tambahan panel /admin
++--  1) Perbaikan bug skor "ngawur" saat "Paksa Selesaikan" (lihat
++--     lib/scoring.js & app/api/attempt/finish/route.js) -- ditambahkan
++--     kolom `lengkap` di tabel hasil supaya panel admin bisa menampilkan
++--     dengan jelas kalau suatu hasil dihitung dari sesi yang BELUM
++--     menjawab semua soal (bukan cuma mengandalkan skor rendah yang
++--     mungkin tidak disadari panitia).
++--  2) Tandai (flag) sesi tertentu untuk ditinjau ulang.
++--  3) Hapus sesi/hasil salah-input langsung dari panel admin.
++-- ============================================================
++
++alter table hasil
++  add column if not exists lengkap boolean;
++
++alter table sesi_tes
++  add column if not exists ditandai boolean not null default false,
++  add column if not exists catatan_panitia text;
++
++create index if not exists idx_sesi_ditandai on sesi_tes(ditandai) where ditandai;
+diff --git a/db/008_buka_kunci_mandiri.sql b/db/008_buka_kunci_mandiri.sql
+new file mode 100644
+index 0000000..f2fb1a4
+--- /dev/null
++++ b/db/008_buka_kunci_mandiri.sql
+@@ -0,0 +1,7 @@
++-- ============================================================
++-- 008: buka kunci mandiri oleh peserta (pakai kode, lihat
++--      app/api/attempt/buka-kunci-sendiri/route.js)
++-- ============================================================
++
++alter table sesi_tes
++  add column if not exists percobaan_kunci_gagal integer not null default 0;
+diff --git a/lib/anti-curang.js b/lib/anti-curang.js
+index 8f59daf..14cff1a 100644
+--- a/lib/anti-curang.js
++++ b/lib/anti-curang.js
+@@ -9,3 +9,10 @@
+ // selanjutnya sampai panitia membuka kunci lewat panel /admin.
+ export const AMBANG_PELANGGARAN = 3;
+ export const STATUS_TERKUNCI = 'terkunci_pelanggaran';
++
++// Batas percobaan salah untuk fitur "buka kunci mandiri" (peserta memasukkan
++// sendiri kode dari panitia di layar terkunci, lihat
++// app/api/attempt/buka-kunci-sendiri/route.js). Dibatasi supaya tidak bisa
++// ditebak asal-asalan berkali-kali -- begitu limitnya habis, peserta HARUS
++// minta panitia buka lewat panel /admin (tombol "Buka Kunci").
++export const AMBANG_PERCOBAAN_KODE = 5;
+diff --git a/lib/scoring.js b/lib/scoring.js
+index c1aa94c..b2ab7e1 100644
+--- a/lib/scoring.js
++++ b/lib/scoring.js
+@@ -16,26 +16,53 @@ function topN(scores, n) {
+   return Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k]) => k);
+ }
+ 
+-export function computeHasil(rows, jenjang) {
++// `totalPerKategori`: { SE: 12, WA: 12, ... , BAKAT_MIPA: 8, ... } — jumlah soal
++// yang SEBENARNYA ditugaskan untuk jenjang ini (dari bank_soal), dipakai
++// sebagai PENYEBUT skor. Ini untuk memperbaiki bug lama: kalau dibiarkan
++// null/undefined, fungsi ini fallback ke perilaku lama (penyebut = jumlah
++// soal yang SUDAH DIJAWAB) — itulah yang membuat sesi yang di-"Paksa
++// Selesaikan" saat baru dijawab 1-2 soal (dan kebetulan benar semua) bisa
++// keluar 100% / IQ 135 "Sangat Superior": soal yang tidak sempat dijawab
++// sama sekali tidak pernah dihitung sebagai salah, jadi tidak pernah
++// menurunkan persentase. Dengan total asli sebagai penyebut, soal yang
++// belum dijawab otomatis dianggap 0 (belum tentu salah, tapi tidak
++// menyumbang skor), sehingga hasil sesi yang belum selesai tidak lagi
++// tampak seperti skor sempurna.
++export function computeHasil(rows, jenjang, totalPerKategori) {
+   const hasil = {};
+ 
+   // ---------- IST (SE/WA/AN/GE/RA/ZR/FA/WU/ME) ----------
+   const istRows = rows.filter(r => IST_KATEGORI.has(r.kategori));
+-  if (istRows.length) {
+-    const perKategori = {}; // {SE:{correct,total}, ...}
+-    const perDomain = {};   // {Verbal:{correct,total}, ...}
++  const istKategoriTerpakai = new Set(istRows.map(r => r.kategori));
++  if (totalPerKategori) {
++    for (const k of Object.keys(DOMAIN_MAP)) {
++      if (totalPerKategori[k]) istKategoriTerpakai.add(k);
++    }
++  }
++  if (istKategoriTerpakai.size) {
++    const perKategori = {}; // {SE:{correct,total,dijawab}, ...}
++    for (const k of istKategoriTerpakai) {
++      perKategori[k] = { correct: 0, total: (totalPerKategori && totalPerKategori[k]) || 0, dijawab: 0 };
++    }
+     for (const r of istRows) {
+-      const k = perKategori[r.kategori] || (perKategori[r.kategori] = { correct: 0, total: 0 });
+-      k.total += 1;
++      const k = perKategori[r.kategori] || (perKategori[r.kategori] = { correct: 0, total: 0, dijawab: 0 });
++      k.dijawab += 1;
++      if (!totalPerKategori) k.total += 1; // fallback lama: tanpa total asli, pakai jumlah terjawab
+       if (r.benar) k.correct += 1;
++    }
+ 
+-      const domain = DOMAIN_MAP[r.kategori];
++    const perDomain = {}; // {Verbal:{correct,total}, ...}
++    for (const [k, v] of Object.entries(perKategori)) {
++      const domain = DOMAIN_MAP[k];
++      if (!domain) continue;
+       const d = perDomain[domain] || (perDomain[domain] = { correct: 0, total: 0 });
+-      d.total += 1;
+-      if (r.benar) d.correct += 1;
++      d.correct += v.correct;
++      d.total += v.total;
+     }
++
+     const totalCorrect = Object.values(perKategori).reduce((s, v) => s + v.correct, 0);
+     const totalMax = Object.values(perKategori).reduce((s, v) => s + v.total, 0);
++    const totalDijawab = Object.values(perKategori).reduce((s, v) => s + v.dijawab, 0);
+     const pct = totalMax ? (totalCorrect / totalMax) * 100 : 0;
+     let iq = Math.round(pct + 35);
+     iq = Math.max(55, Math.min(145, iq));
+@@ -44,11 +71,13 @@ export function computeHasil(rows, jenjang) {
+     hasil.iqScores = Object.fromEntries(Object.entries(perKategori).map(([k, v]) => [k, v.correct]));
+     hasil.iqTotalCorrect = totalCorrect;
+     hasil.iqTotalMax = totalMax;
++    hasil.iqTotalDijawab = totalDijawab;
++    hasil.iqLengkap = totalMax > 0 && totalDijawab >= totalMax;
+     hasil.iqPercentage = Math.round(pct);
+     hasil.iq = iq;
+     hasil.iqClassification = classify(iq);
+     hasil.iqDomain = Object.fromEntries(
+-      Object.entries(perDomain).map(([d, v]) => [d, Math.round((v.correct / v.total) * 100)])
++      Object.entries(perDomain).map(([d, v]) => [d, v.total ? Math.round((v.correct / v.total) * 100) : 0])
+     );
+   }
+ 
+@@ -89,23 +118,43 @@ export function computeHasil(rows, jenjang) {
+   }
+ 
+   // ---------- BAKAT DIFERENSIAL ----------
++  // Sama seperti IST di atas: penyebutnya HARUS jumlah soal bakat yang
++  // sungguh-sungguh ditugaskan per sub-kategori (dari totalPerKategori,
++  // dikirim dengan kunci "BAKAT_<sub_kategori>"), bukan cuma yang sempat
++  // dijawab -- kalau tidak, sesi yang dipaksa selesai sebelum tes bakat
++  // dikerjakan bisa salah tampil skor 100% pada sub-kategori yang baru
++  // dijawab 1 soal dan kebetulan benar.
+   const bakatRows = rows.filter(r => r.kategori === 'BAKAT');
+-  if (bakatRows.length) {
++  const bakatSubTerpakai = new Set(bakatRows.map(r => r.sub_kategori));
++  if (totalPerKategori) {
++    for (const k of Object.keys(BAKAT_LABELS)) {
++      if (totalPerKategori[`BAKAT_${k}`]) bakatSubTerpakai.add(k);
++    }
++  }
++  if (bakatSubTerpakai.size) {
+     const byCat = {};
++    for (const k of bakatSubTerpakai) {
++      byCat[k] = { correct: 0, total: (totalPerKategori && totalPerKategori[`BAKAT_${k}`]) || 0, dijawab: 0 };
++    }
+     for (const r of bakatRows) {
+-      const c = byCat[r.sub_kategori] || (byCat[r.sub_kategori] = { correct: 0, count: 0 });
+-      c.count += 1;
++      const c = byCat[r.sub_kategori] || (byCat[r.sub_kategori] = { correct: 0, total: 0, dijawab: 0 });
++      c.dijawab += 1;
++      if (!totalPerKategori) c.total += 1; // fallback lama
+       if (r.benar) c.correct += 1;
+     }
+     const scores = {};
++    let bakatTotalDijawab = 0, bakatTotalMax = 0;
+     for (const k of Object.keys(BAKAT_LABELS)) {
+-      const st = byCat[k] || { correct: 0, count: 1 };
+-      scores[k] = Math.round((st.correct / st.count) * 100);
++      const st = byCat[k] || { correct: 0, total: 0, dijawab: 0 };
++      scores[k] = st.total ? Math.round((st.correct / st.total) * 100) : 0;
++      bakatTotalDijawab += st.dijawab;
++      bakatTotalMax += st.total;
+     }
+     const top = topN(scores, 1)[0];
+     hasil.bakatScores = scores;
+     hasil.bakatTop = top;
+     hasil.bakatRekomendasi = (jenjang === 'sma' ? BAKAT_DESC_SMA : BAKAT_DESC_SMP)[top];
++    hasil.bakatLengkap = bakatTotalMax > 0 && bakatTotalDijawab >= bakatTotalMax;
+   }
+ 
+   return hasil;

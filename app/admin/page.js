@@ -36,6 +36,32 @@ function ringkasPelanggaran(rincian) {
     .join('\n');
 }
 
+// ── util CSV / download (dipakai fitur "Unduh Jawaban Mentah") ─────────
+function csvEscape(v) {
+  if (v === null || v === undefined) return '';
+  const s = String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function toCsv(rows, kolom) {
+  const header = kolom.map(k => k.label).join(',');
+  const body = rows.map(r => kolom.map(k => csvEscape(r[k.key])).join(',')).join('\n');
+  return `${header}\n${body}`;
+}
+function unduhFile(nama, isi, mime = 'text/csv;charset=utf-8;') {
+  const blob = new Blob(['\uFEFF' + isi], { type: mime }); // BOM biar Excel baca UTF-8 dgn benar
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nama;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+const KOLOM_JAWABAN_MENTAH = [
+  { key: 'nama', label: 'Nama' }, { key: 'kelas', label: 'Kelas' }, { key: 'sekolah', label: 'Sekolah' },
+  { key: 'jenjang', label: 'Jenjang' }, { key: 'status', label: 'Status Sesi' }, { key: 'sesi_id', label: 'Sesi ID' },
+  { key: 'kode_soal', label: 'Kode Soal' }, { key: 'kategori', label: 'Kategori' }, { key: 'sub_kategori', label: 'Sub Kategori' },
+  { key: 'jawaban_teks', label: 'Jawaban' }, { key: 'benar', label: 'Benar' }, { key: 'dijawab_at', label: 'Dijawab Pada' },
+];
+
 export default function AdminPage() {
   const [pin, setPin] = useState('');
   const [authed, setAuthed] = useState(false);
@@ -118,6 +144,80 @@ export default function AdminPage() {
     }
   };
 
+  const hapusSesi = async (sesiId, nama) => {
+    if (!confirm(`Hapus PERMANEN sesi milik "${nama}"?\n\nSemua jawaban, hasil, dan riwayat pelanggaran sesi ini akan ikut terhapus dan TIDAK BISA dikembalikan. Pakai ini untuk entri salah-input / dobel / uji-coba, bukan untuk menyembunyikan hasil siswa yang sah.`)) return;
+    setActionLoading(sesiId);
+    setActionMsg('');
+    try {
+      const res = await fetch('/api/admin/hapus-sesi', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json', 'x-panitia-pin': pin },
+        body: JSON.stringify({ sesiId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gagal menghapus sesi.');
+      setActionMsg(`✓ Sesi "${nama}" berhasil dihapus.`);
+      load(pin);
+    } catch (e) {
+      setActionMsg(`⚠️ ${e.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const toggleTandai = async (sesiId, nama, ditandaiSaatIni) => {
+    setActionLoading(sesiId);
+    setActionMsg('');
+    try {
+      const res = await fetch('/api/admin/tandai', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-panitia-pin': pin },
+        body: JSON.stringify({ sesiId, ditandai: !ditandaiSaatIni }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gagal menandai sesi.');
+      // update langsung di state biar tidak perlu tunggu refresh 15 detik
+      setRows(prev => prev.map(r => r.sesi_id === sesiId ? { ...r, ditandai: data.ditandai } : r));
+      setActionMsg(data.ditandai ? `🚩 "${nama}" ditandai untuk ditinjau.` : `✓ Tanda pada "${nama}" dihapus.`);
+    } catch (e) {
+      setActionMsg(`⚠️ ${e.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const unduhJawaban = async (sesiId, nama) => {
+    setActionLoading(sesiId);
+    setActionMsg('');
+    try {
+      const res = await fetch(`/api/admin/jawaban-mentah?sesiId=${sesiId}`, { headers: { 'x-panitia-pin': pin } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gagal mengambil jawaban.');
+      if (!data.rows.length) { setActionMsg(`⚠️ Belum ada jawaban tersimpan untuk "${nama}".`); return; }
+      unduhFile(`jawaban-mentah_${nama.replace(/\s+/g, '-')}.csv`, toCsv(data.rows, KOLOM_JAWABAN_MENTAH));
+      setActionMsg(`✓ Jawaban mentah "${nama}" diunduh.`);
+    } catch (e) {
+      setActionMsg(`⚠️ ${e.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const unduhSemuaJawaban = async () => {
+    setActionLoading('__semua__');
+    setActionMsg('');
+    try {
+      const res = await fetch('/api/admin/jawaban-mentah?semua=1', { headers: { 'x-panitia-pin': pin } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gagal mengambil jawaban.');
+      if (!data.rows.length) { setActionMsg('⚠️ Belum ada jawaban tersimpan sama sekali.'); return; }
+      unduhFile('jawaban-mentah_semua-peserta.csv', toCsv(data.rows, KOLOM_JAWABAN_MENTAH));
+      setActionMsg(`✓ Jawaban mentah ${data.rows.length} baris (semua peserta) diunduh.`);
+    } catch (e) {
+      setActionMsg(`⚠️ ${e.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const mengerjakan = useMemo(() => rows.filter(r => r.status === 'mengerjakan' || r.status === 'terkunci_pelanggaran'), [rows]);
   const selesai = useMemo(() => rows.filter(r => r.status !== 'mengerjakan' && r.status !== 'terkunci_pelanggaran'), [rows]);
 
@@ -174,9 +274,12 @@ export default function AdminPage() {
             <div className="admin-title">📊 Live Monitor — Simulasi Tes IST</div>
             {lastLoad && <div className="muted">Diperbarui otomatis · terakhir {lastLoad.toLocaleTimeString('id-ID')}</div>}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn btn-outline btn-auto btn-sm" onClick={() => load(pin)} disabled={loading}>
               {loading ? '⏳ Memuat...' : '🔄 Refresh'}
+            </button>
+            <button className="btn btn-outline btn-auto btn-sm" onClick={unduhSemuaJawaban} disabled={actionLoading === '__semua__'}>
+              {actionLoading === '__semua__' ? '⏳ Menyiapkan...' : '⬇️ Unduh Semua Jawaban Mentah'}
             </button>
             <input
               className="search-input" placeholder="Cari nama / kelas / sekolah..."
@@ -237,7 +340,17 @@ export default function AdminPage() {
                   const aktif = detik < AMBANG_AKTIF_DETIK;
                   return (
                     <tr key={r.sesi_id} className={ditinggal ? 'row-stale' : ''}>
-                      <td style={{ fontWeight: 600 }}>{r.nama}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        <button
+                          title={r.ditandai ? 'Hapus tanda' : 'Tandai untuk ditinjau'}
+                          onClick={() => toggleTandai(r.sesi_id, r.nama, r.ditandai)}
+                          disabled={actionLoading === r.sesi_id}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', marginRight: 4, fontSize: 14 }}
+                        >
+                          {r.ditandai ? '🚩' : '🏳️'}
+                        </button>
+                        {r.nama}
+                      </td>
                       <td>{r.kelas || '-'}</td>
                       <td>{r.sekolah}</td>
                       <td style={{ textTransform: 'uppercase' }}>{r.jenjang}</td>
@@ -278,6 +391,14 @@ export default function AdminPage() {
                           >
                             {actionLoading === r.sesi_id ? '...' : 'Paksa Selesaikan'}
                           </button>
+                          <button
+                            className="btn btn-outline btn-sm btn-auto"
+                            disabled={actionLoading === r.sesi_id}
+                            onClick={() => hapusSesi(r.sesi_id, r.nama)}
+                            title="Hapus sesi ini beserta jawabannya"
+                          >
+                            {actionLoading === r.sesi_id ? '...' : '🗑️ Hapus'}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -298,33 +419,78 @@ export default function AdminPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  {['Nama', 'Kelas', 'Sekolah', 'Status', 'Level IQ', 'Skor IST', 'Est. IQ', 'RIASEC', 'Gaya', 'Bakat', 'Selesai'].map(h => (
+                  {['Nama', 'Kelas', 'Sekolah', 'Status', 'Level IQ', 'Skor IST', 'Est. IQ', 'RIASEC', 'Gaya', 'Bakat', 'Selesai', 'Aksi'].map(h => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {selesaiTampil.map(r => (
-                  <tr key={r.sesi_id}>
-                    <td style={{ fontWeight: 600 }}>{r.nama}</td>
-                    <td>{r.kelas || '-'}</td>
-                    <td>{r.sekolah}</td>
-                    <td>
-                      <span className={`badge ${r.status === 'selesai_paksa_panitia' ? 'badge-gold' : 'badge-green'}`}>
-                        {STATUS_LABEL[r.status] || r.status}
-                      </span>
-                    </td>
-                    <td>{r.level_ist || '-'}</td>
-                    <td>{r.persentase != null ? `${r.persentase}%` : '-'}</td>
-                    <td>{r.estimasi_iq ?? '-'}</td>
-                    <td>{r.riasec_top || '-'}</td>
-                    <td>{r.gaya_dominant || '-'}</td>
-                    <td>{r.bakat_top || '-'}</td>
-                    <td className="muted">{fmtWaktu(r.selesai_at)}</td>
-                  </tr>
-                ))}
+                {selesaiTampil.map(r => {
+                  const tidakLengkap = r.lengkap === false;
+                  return (
+                    <tr key={r.sesi_id} className={tidakLengkap ? 'row-stale' : ''}>
+                      <td style={{ fontWeight: 600 }}>
+                        <button
+                          title={r.ditandai ? 'Hapus tanda' : 'Tandai untuk ditinjau'}
+                          onClick={() => toggleTandai(r.sesi_id, r.nama, r.ditandai)}
+                          disabled={actionLoading === r.sesi_id}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', marginRight: 4, fontSize: 14 }}
+                        >
+                          {r.ditandai ? '🚩' : '🏳️'}
+                        </button>
+                        {r.nama}
+                      </td>
+                      <td>{r.kelas || '-'}</td>
+                      <td>{r.sekolah}</td>
+                      <td>
+                        <span className={`badge ${r.status === 'selesai_paksa_panitia' ? 'badge-gold' : 'badge-green'}`}>
+                          {STATUS_LABEL[r.status] || r.status}
+                        </span>
+                        {tidakLengkap && (
+                          <div>
+                            <span className="badge badge-red" style={{ marginTop: 4 }} title="Sesi diselesaikan sebelum semua soal dijawab -- skor di bawah ini dihitung dari soal yang sempat terjawab saja, dari total soal yang seharusnya.">
+                              <span className="dot" />⚠️ Tidak lengkap
+                            </span>
+                          </div>
+                        )}
+                      </td>
+                      <td>{r.level_ist || '-'}</td>
+                      <td>
+                        {r.persentase != null ? `${r.persentase}%` : '-'}
+                        {r.total_soal != null && (
+                          <div className="muted" style={{ fontSize: 11 }}>({r.total_benar ?? 0}/{r.total_soal} benar)</div>
+                        )}
+                      </td>
+                      <td>{r.estimasi_iq ?? '-'}</td>
+                      <td>{r.riasec_top || '-'}</td>
+                      <td>{r.gaya_dominant || '-'}</td>
+                      <td>{r.bakat_top || '-'}</td>
+                      <td className="muted">{fmtWaktu(r.selesai_at)}</td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <button
+                            className="btn btn-outline btn-sm btn-auto"
+                            disabled={actionLoading === r.sesi_id}
+                            onClick={() => unduhJawaban(r.sesi_id, r.nama)}
+                            title="Unduh jawaban mentah sesi ini (CSV)"
+                          >
+                            {actionLoading === r.sesi_id ? '...' : '⬇️ Jawaban'}
+                          </button>
+                          <button
+                            className="btn btn-danger btn-sm btn-auto"
+                            disabled={actionLoading === r.sesi_id}
+                            onClick={() => hapusSesi(r.sesi_id, r.nama)}
+                            title="Hapus sesi ini beserta jawaban & hasilnya"
+                          >
+                            {actionLoading === r.sesi_id ? '...' : '🗑️ Hapus'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {!selesaiTampil.length && (
-                  <tr><td colSpan={11} style={{ textAlign: 'center', color: 'var(--t2)', padding: 20 }}>
+                  <tr><td colSpan={12} style={{ textAlign: 'center', color: 'var(--t2)', padding: 20 }}>
                     {selesai.length ? 'Tidak ada yang cocok dengan pencarian.' : 'Belum ada peserta yang menyelesaikan tes.'}
                   </td></tr>
                 )}

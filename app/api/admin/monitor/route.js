@@ -19,9 +19,9 @@ export async function GET(req) {
       select
         s.id as sesi_id, s.username, si.nama, si.kelas, si.sekolah,
         s.jenjang, s.status, s.tahap_ke, s.total_tahap, s.cheat_count,
-        s.mulai_at, s.heartbeat_at, s.selesai_at,
+        s.mulai_at, s.heartbeat_at, s.selesai_at, s.ditandai, s.catatan_panitia,
         (select count(*)::int from jawaban j where j.sesi_id = s.id) as jumlah_terjawab,
-        h.level_ist, h.persentase, h.estimasi_iq,
+        h.level_ist, h.persentase, h.estimasi_iq, h.total_benar, h.total_soal, h.lengkap,
         h.riasec ->> 'topCode' as riasec_top,
         h.gaya_belajar ->> 'dominant' as gaya_dominant,
         h.bakat ->> 'top' as bakat_top,
