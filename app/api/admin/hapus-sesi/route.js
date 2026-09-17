@@ -17,13 +17,21 @@ export async function DELETE(req) {
     return Response.json({ error: 'PIN panitia salah' }, { status: 401 });
   }
 
-  const { sesiId } = await req.json();
-  if (!sesiId) return Response.json({ error: 'sesiId wajib diisi' }, { status: 400 });
+  try {
+    const { sesiId } = await req.json();
+    if (!sesiId) return Response.json({ error: 'sesiId wajib diisi' }, { status: 400 });
 
-  const [row] = await sql`
-    delete from sesi_tes where id = ${sesiId} returning id
-  `;
-  if (!row) return Response.json({ error: 'Sesi tidak ditemukan' }, { status: 404 });
+    const [row] = await sql`
+      delete from sesi_tes where id = ${sesiId} returning id
+    `;
+    if (!row) return Response.json({ error: 'Sesi tidak ditemukan (mungkin sudah terhapus sebelumnya)' }, { status: 404 });
 
-  return Response.json({ ok: true });
+    return Response.json({ ok: true });
+  } catch (err) {
+    // Jaring pengaman spy sama kayak /api/admin/jawaban-mentah: balas JSON
+    // dgn pesan asli errornya, supaya kalau macet lagi, penyebabnya kelihatan
+    // jelas di response (dan console.log di klien) -- bukan silent crash.
+    console.error('hapus-sesi error:', err);
+    return Response.json({ error: 'Gagal menghapus sesi: ' + (err.message || 'tidak diketahui') }, { status: 500 });
+  }
 }

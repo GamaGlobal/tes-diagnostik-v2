@@ -14,13 +14,18 @@ export async function POST(req) {
     return Response.json({ error: 'PIN panitia salah' }, { status: 401 });
   }
 
-  const { sesiId, ditandai } = await req.json();
-  if (!sesiId) return Response.json({ error: 'sesiId wajib diisi' }, { status: 400 });
+  try {
+    const { sesiId, ditandai } = await req.json();
+    if (!sesiId) return Response.json({ error: 'sesiId wajib diisi' }, { status: 400 });
 
-  const [row] = await sql`
-    update sesi_tes set ditandai = ${!!ditandai} where id = ${sesiId} returning id, ditandai
-  `;
-  if (!row) return Response.json({ error: 'Sesi tidak ditemukan' }, { status: 404 });
+    const [row] = await sql`
+      update sesi_tes set ditandai = ${!!ditandai} where id = ${sesiId} returning id, ditandai
+    `;
+    if (!row) return Response.json({ error: 'Sesi tidak ditemukan' }, { status: 404 });
 
-  return Response.json({ ok: true, ditandai: row.ditandai });
+    return Response.json({ ok: true, ditandai: row.ditandai });
+  } catch (err) {
+    console.error('tandai error:', err);
+    return Response.json({ error: 'Gagal menandai sesi: ' + (err.message || 'tidak diketahui') }, { status: 500 });
+  }
 }

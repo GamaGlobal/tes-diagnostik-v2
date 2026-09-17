@@ -1,0 +1,252 @@
+diff --git a/app/admin/page.js b/app/admin/page.js
+index 0bfdc6c..6195f66 100644
+--- a/app/admin/page.js
++++ b/app/admin/page.js
+@@ -66,11 +66,43 @@ function unduhFile(nama, isi, mime = 'text/csv;charset=utf-8;') {
+   document.body.appendChild(a); a.click(); document.body.removeChild(a);
+   URL.revokeObjectURL(url);
+ }
++// Ubah baris mentah dari /api/admin/jawaban-mentah (yang sengaja dibuat "datar",
++// 1 baris = 1 jawaban) jadi lebih enak dibaca di Excel: pilihan jawaban (jsonb)
++// diubah dari '["a","b","c"]' jadi "a | b | c", dan status per-baris (benar/
++// salah) diubah dari true/false/null jadi teks -- daripada panitia harus buka
++// tiap sesi satu-satu di panel utk lihat soal & kunci jawabannya.
++function siapkanBarisJawaban(rows) {
++  return rows.map(r => {
++    let pilihanTeks = '';
++    try {
++      const arr = JSON.parse(r.pilihan_json || '[]');
++      pilihanTeks = Array.isArray(arr) ? arr.join(' | ') : String(arr);
++    } catch { pilihanTeks = r.pilihan_json || ''; }
++    return {
++      ...r,
++      pilihan_teks: pilihanTeks,
++      status_jawaban: r.jawaban_teks == null ? 'Tidak dijawab (likert/preferensi)' : (r.benar === true ? 'Benar' : r.benar === false ? 'Salah' : '-'),
++      lengkap_teks: r.lengkap === true ? 'Ya' : r.lengkap === false ? 'TIDAK (soal belum semua terjawab)' : '-',
++      skor_ist_teks: r.skor_ist_persen != null ? `${r.skor_ist_persen}% (${r.total_benar ?? 0}/${r.total_soal ?? 0} benar)` : '-',
++    };
++  });
++}
++// Kolom CSV "jawaban mentah" -- sengaja lengkap: bukan cuma jawaban siswa,
++// tapi juga teks soal, pilihan, kunci jawaban, DAN ringkasan skor sesi
++// (level IQ / persentase / RIASEC / gaya / bakat) supaya panitia bisa
++// langsung menganalisis dari satu file tanpa buka panel lain.
+ const KOLOM_JAWABAN_MENTAH = [
+   { key: 'nama', label: 'Nama' }, { key: 'kelas', label: 'Kelas' }, { key: 'sekolah', label: 'Sekolah' },
+-  { key: 'jenjang', label: 'Jenjang' }, { key: 'status', label: 'Status Sesi' }, { key: 'sesi_id', label: 'Sesi ID' },
+-  { key: 'kode_soal', label: 'Kode Soal' }, { key: 'kategori', label: 'Kategori' }, { key: 'sub_kategori', label: 'Sub Kategori' },
+-  { key: 'jawaban_teks', label: 'Jawaban' }, { key: 'benar', label: 'Benar' }, { key: 'dijawab_at', label: 'Dijawab Pada' },
++  { key: 'jenjang', label: 'Jenjang' }, { key: 'status_sesi', label: 'Status Sesi' },
++  { key: 'level_ist', label: 'Level IQ' }, { key: 'skor_ist_teks', label: 'Skor IST' },
++  { key: 'estimasi_iq', label: 'Estimasi IQ' }, { key: 'lengkap_teks', label: 'Semua Soal Terjawab?' },
++  { key: 'riasec_top', label: 'RIASEC' }, { key: 'gaya_dominant', label: 'Gaya Belajar' }, { key: 'bakat_top', label: 'Bakat' },
++  { key: 'sesi_id', label: 'Sesi ID' },
++  { key: 'urutan', label: 'No Soal' }, { key: 'kode_soal', label: 'Kode Soal' },
++  { key: 'kategori', label: 'Kategori' }, { key: 'sub_kategori', label: 'Sub Kategori' }, { key: 'tipe', label: 'Tipe Soal' },
++  { key: 'pertanyaan', label: 'Teks Soal' }, { key: 'pilihan_teks', label: 'Pilihan Jawaban' },
++  { key: 'jawaban_kunci', label: 'Kunci Jawaban' }, { key: 'jawaban_teks', label: 'Jawaban Siswa' },
++  { key: 'status_jawaban', label: 'Status Jawaban' }, { key: 'dijawab_at', label: 'Dijawab Pada' },
+ ];
+ 
+ export default function AdminPage() {
+@@ -165,10 +197,17 @@ export default function AdminPage() {
+         body: JSON.stringify({ sesiId }),
+       });
+       const data = await resJson(res);
+-      if (!res.ok) throw new Error(data.error || 'Gagal menghapus sesi.');
++      // eslint-disable-next-line no-console
++      console.log('[hapusSesi] status:', res.status, 'response:', data);
++      if (!res.ok) throw new Error(`${data.error || 'Gagal menghapus sesi.'} (HTTP ${res.status})`);
++      // hapus langsung dari state lokal juga -- jangan cuma andalkan load()
++      // berhasil, supaya barisnya pasti hilang dari layar seketika walau
++      // refresh berikutnya lambat/gagal karena sebab lain.
++      setRows(prev => prev.filter(r => r.sesi_id !== sesiId));
+       setActionMsg(`✓ Sesi "${nama}" berhasil dihapus.`);
+       load(pin);
+     } catch (e) {
++      console.error('[hapusSesi] error:', e);
+       setActionMsg(`⚠️ ${e.message}`);
+     } finally {
+       setActionLoading(null);
+@@ -203,7 +242,7 @@ export default function AdminPage() {
+       const data = await resJson(res);
+       if (!res.ok) throw new Error(data.error || 'Gagal mengambil jawaban.');
+       if (!data.rows.length) { setActionMsg(`⚠️ Belum ada jawaban tersimpan untuk "${nama}".`); return; }
+-      unduhFile(`jawaban-mentah_${nama.replace(/\s+/g, '-')}.csv`, toCsv(data.rows, KOLOM_JAWABAN_MENTAH));
++      unduhFile(`jawaban-mentah_${nama.replace(/\s+/g, '-')}.csv`, toCsv(siapkanBarisJawaban(data.rows), KOLOM_JAWABAN_MENTAH));
+       setActionMsg(`✓ Jawaban mentah "${nama}" diunduh.`);
+     } catch (e) {
+       setActionMsg(`⚠️ ${e.message}`);
+@@ -220,7 +259,7 @@ export default function AdminPage() {
+       const data = await resJson(res);
+       if (!res.ok) throw new Error(data.error || 'Gagal mengambil jawaban.');
+       if (!data.rows.length) { setActionMsg('⚠️ Belum ada jawaban tersimpan sama sekali.'); return; }
+-      unduhFile('jawaban-mentah_semua-peserta.csv', toCsv(data.rows, KOLOM_JAWABAN_MENTAH));
++      unduhFile('jawaban-mentah_semua-peserta.csv', toCsv(siapkanBarisJawaban(data.rows), KOLOM_JAWABAN_MENTAH));
+       setActionMsg(`✓ Jawaban mentah ${data.rows.length} baris (semua peserta) diunduh.`);
+     } catch (e) {
+       setActionMsg(`⚠️ ${e.message}`);
+diff --git a/app/api/admin/hapus-sesi/route.js b/app/api/admin/hapus-sesi/route.js
+index aff738a..a94c66e 100644
+--- a/app/api/admin/hapus-sesi/route.js
++++ b/app/api/admin/hapus-sesi/route.js
+@@ -17,13 +17,21 @@ export async function DELETE(req) {
+     return Response.json({ error: 'PIN panitia salah' }, { status: 401 });
+   }
+ 
+-  const { sesiId } = await req.json();
+-  if (!sesiId) return Response.json({ error: 'sesiId wajib diisi' }, { status: 400 });
++  try {
++    const { sesiId } = await req.json();
++    if (!sesiId) return Response.json({ error: 'sesiId wajib diisi' }, { status: 400 });
+ 
+-  const [row] = await sql`
+-    delete from sesi_tes where id = ${sesiId} returning id
+-  `;
+-  if (!row) return Response.json({ error: 'Sesi tidak ditemukan' }, { status: 404 });
++    const [row] = await sql`
++      delete from sesi_tes where id = ${sesiId} returning id
++    `;
++    if (!row) return Response.json({ error: 'Sesi tidak ditemukan (mungkin sudah terhapus sebelumnya)' }, { status: 404 });
+ 
+-  return Response.json({ ok: true });
++    return Response.json({ ok: true });
++  } catch (err) {
++    // Jaring pengaman spy sama kayak /api/admin/jawaban-mentah: balas JSON
++    // dgn pesan asli errornya, supaya kalau macet lagi, penyebabnya kelihatan
++    // jelas di response (dan console.log di klien) -- bukan silent crash.
++    console.error('hapus-sesi error:', err);
++    return Response.json({ error: 'Gagal menghapus sesi: ' + (err.message || 'tidak diketahui') }, { status: 500 });
++  }
+ }
+diff --git a/app/api/admin/jawaban-mentah/route.js b/app/api/admin/jawaban-mentah/route.js
+index a07b8c3..f26761b 100644
+--- a/app/api/admin/jawaban-mentah/route.js
++++ b/app/api/admin/jawaban-mentah/route.js
+@@ -3,9 +3,16 @@
+ // Header: x-panitia-pin (sama seperti endpoint admin lain)
+ //
+ // Dipakai tombol "Unduh Jawaban" di panel /admin (lihat app/admin/page.js) --
+-// mengembalikan baris jawaban APA ADANYA dari tabel `jawaban` (dijoin info
+-// siswa & soal secukupnya untuk konteks), supaya panitia bisa mengecek
+-// manual kalau perlu, di luar skor yang sudah dihitung sistem.
++// mengembalikan baris jawaban LENGKAP dengan konteksnya: teks soal, pilihan,
++// kunci jawaban, jawaban siswa, DAN ringkasan skor sesi (level IQ, persentase,
++// RIASEC/gaya/bakat) supaya panitia bisa langsung menganalisis dari satu
++// file tanpa perlu buka panel lain / cross-reference manual.
++//
++// CATATAN: kolom SELECT sengaja ditulis lengkap di KEDUA cabang query di
++// bawah (bukan dipisah jadi 1 potongan lalu disisipkan) karena `sql` dari
++// @neondatabase/serverless (beda dgn postgres.js) TIDAK mendukung
++// menyisipkan sql`...`/sql.unsafe(...) lain ke dalam sql`...` induk -- itu
++// yang bikin endpoint ini crash sebelumnya pas dipanggil dgn semua=1.
+ import { sql } from '../../../../lib/db';
+ 
+ export async function GET(req) {
+@@ -23,31 +30,53 @@ export async function GET(req) {
+   }
+ 
+   try {
+-    // PENTING: `sql` dari @neondatabase/serverless (beda dgn postgres.js) TIDAK
+-    // mendukung menyisipkan sql`...` lain di dalam sql`...` induk (itu bug versi
+-    // sebelumnya yang bikin endpoint ini crash pas dipanggil dgn semua=1 --
+-    // request selesai tanpa body, makanya di klien muncul error "Unexpected end
+-    // of JSON input"). Jadi query dipisah jadi 2 cabang lengkap, bukan disatukan
+-    // dgn kondisi ternary di dalam template.
+     const rows = semua
+       ? await sql`
+           select
+-            s.id as sesi_id, si.nama, si.kelas, si.sekolah, s.jenjang, s.status,
+-            j.kode_soal, b.kategori, b.sub_kategori, j.jawaban_teks, j.benar, j.dijawab_at
++            s.id as sesi_id, si.nama, si.kelas, si.sekolah, s.jenjang,
++            case s.status
++              when 'selesai_terkirim' then 'Selesai (siswa sendiri)'
++              when 'selesai_paksa_panitia' then 'Diselesaikan Panitia'
++              when 'terkunci_pelanggaran' then 'Terkunci (pelanggaran)'
++              else s.status
++            end as status_sesi,
++            s.selesai_at,
++            h.level_ist, h.persentase as skor_ist_persen, h.total_benar, h.total_soal, h.estimasi_iq, h.lengkap,
++            h.riasec ->> 'topCode' as riasec_top,
++            h.gaya_belajar ->> 'dominant' as gaya_dominant,
++            h.bakat ->> 'top' as bakat_top,
++            b.urutan, b.kategori, b.sub_kategori, b.tipe,
++            b.pertanyaan, b.pilihan::text as pilihan_json, b.jawaban_kunci,
++            j.kode_soal, j.jawaban_teks, j.benar, j.dijawab_at
+           from jawaban j
+           join sesi_tes s on s.id = j.sesi_id
+           join siswa si on si.username = s.username
+           join bank_soal b on b.kode_soal = j.kode_soal
++          left join hasil h on h.sesi_id = s.id
+           order by si.nama, j.sesi_id, b.kategori, b.urutan
+         `
+       : await sql`
+           select
+-            s.id as sesi_id, si.nama, si.kelas, si.sekolah, s.jenjang, s.status,
+-            j.kode_soal, b.kategori, b.sub_kategori, j.jawaban_teks, j.benar, j.dijawab_at
++            s.id as sesi_id, si.nama, si.kelas, si.sekolah, s.jenjang,
++            case s.status
++              when 'selesai_terkirim' then 'Selesai (siswa sendiri)'
++              when 'selesai_paksa_panitia' then 'Diselesaikan Panitia'
++              when 'terkunci_pelanggaran' then 'Terkunci (pelanggaran)'
++              else s.status
++            end as status_sesi,
++            s.selesai_at,
++            h.level_ist, h.persentase as skor_ist_persen, h.total_benar, h.total_soal, h.estimasi_iq, h.lengkap,
++            h.riasec ->> 'topCode' as riasec_top,
++            h.gaya_belajar ->> 'dominant' as gaya_dominant,
++            h.bakat ->> 'top' as bakat_top,
++            b.urutan, b.kategori, b.sub_kategori, b.tipe,
++            b.pertanyaan, b.pilihan::text as pilihan_json, b.jawaban_kunci,
++            j.kode_soal, j.jawaban_teks, j.benar, j.dijawab_at
+           from jawaban j
+           join sesi_tes s on s.id = j.sesi_id
+           join siswa si on si.username = s.username
+           join bank_soal b on b.kode_soal = j.kode_soal
++          left join hasil h on h.sesi_id = s.id
+           where j.sesi_id = ${sesiId}
+           order by si.nama, j.sesi_id, b.kategori, b.urutan
+         `;
+@@ -63,9 +92,10 @@ export async function GET(req) {
+     return Response.json({ rows });
+   } catch (err) {
+     // Jaring pengaman: kalau ada error tak terduga (query gagal dll), tetap
+-    // balas JSON yang valid -- supaya di klien tidak muncul error generik
++    // balas JSON yang valid dgn PESAN ASLINYA -- supaya kalau ada bug lagi,
++    // panitia bisa langsung salin pesan errornya utk dilaporkan, bukan cuma
+     // "Unexpected end of JSON input" yang tidak jelas sumbernya.
+     console.error('jawaban-mentah error:', err);
+-    return Response.json({ error: 'Gagal mengambil data jawaban dari server.' }, { status: 500 });
++    return Response.json({ error: 'Gagal mengambil data jawaban dari server: ' + (err.message || 'tidak diketahui') }, { status: 500 });
+   }
+ }
+diff --git a/app/api/admin/tandai/route.js b/app/api/admin/tandai/route.js
+index aa6aaf6..6dfa874 100644
+--- a/app/api/admin/tandai/route.js
++++ b/app/api/admin/tandai/route.js
+@@ -14,13 +14,18 @@ export async function POST(req) {
+     return Response.json({ error: 'PIN panitia salah' }, { status: 401 });
+   }
+ 
+-  const { sesiId, ditandai } = await req.json();
+-  if (!sesiId) return Response.json({ error: 'sesiId wajib diisi' }, { status: 400 });
++  try {
++    const { sesiId, ditandai } = await req.json();
++    if (!sesiId) return Response.json({ error: 'sesiId wajib diisi' }, { status: 400 });
+ 
+-  const [row] = await sql`
+-    update sesi_tes set ditandai = ${!!ditandai} where id = ${sesiId} returning id, ditandai
+-  `;
+-  if (!row) return Response.json({ error: 'Sesi tidak ditemukan' }, { status: 404 });
++    const [row] = await sql`
++      update sesi_tes set ditandai = ${!!ditandai} where id = ${sesiId} returning id, ditandai
++    `;
++    if (!row) return Response.json({ error: 'Sesi tidak ditemukan' }, { status: 404 });
+ 
+-  return Response.json({ ok: true, ditandai: row.ditandai });
++    return Response.json({ ok: true, ditandai: row.ditandai });
++  } catch (err) {
++    console.error('tandai error:', err);
++    return Response.json({ error: 'Gagal menandai sesi: ' + (err.message || 'tidak diketahui') }, { status: 500 });
++  }
+ }

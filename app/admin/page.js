@@ -66,11 +66,43 @@ function unduhFile(nama, isi, mime = 'text/csv;charset=utf-8;') {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+// Ubah baris mentah dari /api/admin/jawaban-mentah (yang sengaja dibuat "datar",
+// 1 baris = 1 jawaban) jadi lebih enak dibaca di Excel: pilihan jawaban (jsonb)
+// diubah dari '["a","b","c"]' jadi "a | b | c", dan status per-baris (benar/
+// salah) diubah dari true/false/null jadi teks -- daripada panitia harus buka
+// tiap sesi satu-satu di panel utk lihat soal & kunci jawabannya.
+function siapkanBarisJawaban(rows) {
+  return rows.map(r => {
+    let pilihanTeks = '';
+    try {
+      const arr = JSON.parse(r.pilihan_json || '[]');
+      pilihanTeks = Array.isArray(arr) ? arr.join(' | ') : String(arr);
+    } catch { pilihanTeks = r.pilihan_json || ''; }
+    return {
+      ...r,
+      pilihan_teks: pilihanTeks,
+      status_jawaban: r.jawaban_teks == null ? 'Tidak dijawab (likert/preferensi)' : (r.benar === true ? 'Benar' : r.benar === false ? 'Salah' : '-'),
+      lengkap_teks: r.lengkap === true ? 'Ya' : r.lengkap === false ? 'TIDAK (soal belum semua terjawab)' : '-',
+      skor_ist_teks: r.skor_ist_persen != null ? `${r.skor_ist_persen}% (${r.total_benar ?? 0}/${r.total_soal ?? 0} benar)` : '-',
+    };
+  });
+}
+// Kolom CSV "jawaban mentah" -- sengaja lengkap: bukan cuma jawaban siswa,
+// tapi juga teks soal, pilihan, kunci jawaban, DAN ringkasan skor sesi
+// (level IQ / persentase / RIASEC / gaya / bakat) supaya panitia bisa
+// langsung menganalisis dari satu file tanpa buka panel lain.
 const KOLOM_JAWABAN_MENTAH = [
   { key: 'nama', label: 'Nama' }, { key: 'kelas', label: 'Kelas' }, { key: 'sekolah', label: 'Sekolah' },
-  { key: 'jenjang', label: 'Jenjang' }, { key: 'status', label: 'Status Sesi' }, { key: 'sesi_id', label: 'Sesi ID' },
-  { key: 'kode_soal', label: 'Kode Soal' }, { key: 'kategori', label: 'Kategori' }, { key: 'sub_kategori', label: 'Sub Kategori' },
-  { key: 'jawaban_teks', label: 'Jawaban' }, { key: 'benar', label: 'Benar' }, { key: 'dijawab_at', label: 'Dijawab Pada' },
+  { key: 'jenjang', label: 'Jenjang' }, { key: 'status_sesi', label: 'Status Sesi' },
+  { key: 'level_ist', label: 'Level IQ' }, { key: 'skor_ist_teks', label: 'Skor IST' },
+  { key: 'estimasi_iq', label: 'Estimasi IQ' }, { key: 'lengkap_teks', label: 'Semua Soal Terjawab?' },
+  { key: 'riasec_top', label: 'RIASEC' }, { key: 'gaya_dominant', label: 'Gaya Belajar' }, { key: 'bakat_top', label: 'Bakat' },
+  { key: 'sesi_id', label: 'Sesi ID' },
+  { key: 'urutan', label: 'No Soal' }, { key: 'kode_soal', label: 'Kode Soal' },
+  { key: 'kategori', label: 'Kategori' }, { key: 'sub_kategori', label: 'Sub Kategori' }, { key: 'tipe', label: 'Tipe Soal' },
+  { key: 'pertanyaan', label: 'Teks Soal' }, { key: 'pilihan_teks', label: 'Pilihan Jawaban' },
+  { key: 'jawaban_kunci', label: 'Kunci Jawaban' }, { key: 'jawaban_teks', label: 'Jawaban Siswa' },
+  { key: 'status_jawaban', label: 'Status Jawaban' }, { key: 'dijawab_at', label: 'Dijawab Pada' },
 ];
 
 export default function AdminPage() {
@@ -165,10 +197,17 @@ export default function AdminPage() {
         body: JSON.stringify({ sesiId }),
       });
       const data = await resJson(res);
-      if (!res.ok) throw new Error(data.error || 'Gagal menghapus sesi.');
+      // eslint-disable-next-line no-console
+      console.log('[hapusSesi] status:', res.status, 'response:', data);
+      if (!res.ok) throw new Error(`${data.error || 'Gagal menghapus sesi.'} (HTTP ${res.status})`);
+      // hapus langsung dari state lokal juga -- jangan cuma andalkan load()
+      // berhasil, supaya barisnya pasti hilang dari layar seketika walau
+      // refresh berikutnya lambat/gagal karena sebab lain.
+      setRows(prev => prev.filter(r => r.sesi_id !== sesiId));
       setActionMsg(`✓ Sesi "${nama}" berhasil dihapus.`);
       load(pin);
     } catch (e) {
+      console.error('[hapusSesi] error:', e);
       setActionMsg(`⚠️ ${e.message}`);
     } finally {
       setActionLoading(null);
@@ -203,7 +242,7 @@ export default function AdminPage() {
       const data = await resJson(res);
       if (!res.ok) throw new Error(data.error || 'Gagal mengambil jawaban.');
       if (!data.rows.length) { setActionMsg(`⚠️ Belum ada jawaban tersimpan untuk "${nama}".`); return; }
-      unduhFile(`jawaban-mentah_${nama.replace(/\s+/g, '-')}.csv`, toCsv(data.rows, KOLOM_JAWABAN_MENTAH));
+      unduhFile(`jawaban-mentah_${nama.replace(/\s+/g, '-')}.csv`, toCsv(siapkanBarisJawaban(data.rows), KOLOM_JAWABAN_MENTAH));
       setActionMsg(`✓ Jawaban mentah "${nama}" diunduh.`);
     } catch (e) {
       setActionMsg(`⚠️ ${e.message}`);
@@ -220,7 +259,7 @@ export default function AdminPage() {
       const data = await resJson(res);
       if (!res.ok) throw new Error(data.error || 'Gagal mengambil jawaban.');
       if (!data.rows.length) { setActionMsg('⚠️ Belum ada jawaban tersimpan sama sekali.'); return; }
-      unduhFile('jawaban-mentah_semua-peserta.csv', toCsv(data.rows, KOLOM_JAWABAN_MENTAH));
+      unduhFile('jawaban-mentah_semua-peserta.csv', toCsv(siapkanBarisJawaban(data.rows), KOLOM_JAWABAN_MENTAH));
       setActionMsg(`✓ Jawaban mentah ${data.rows.length} baris (semua peserta) diunduh.`);
     } catch (e) {
       setActionMsg(`⚠️ ${e.message}`);
