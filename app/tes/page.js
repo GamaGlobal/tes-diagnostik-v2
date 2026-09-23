@@ -186,7 +186,7 @@ export default function TesPage() {
               setTahap('selesai');
             } else {
               setSesi({ nama: data.nama, kelas: data.kelas, sekolah: data.sekolah });
-              const soalRes = await fetch(`${API}/soal?jenjang=${data.jenjang}`);
+              const soalRes = await fetch(`${API}/soal?jenjang=${data.jenjang}&sesiId=${saved.sesiId}`);
               const soalData = await soalRes.json();
               setSections(soalData.sections);
               terapkanStatus(data.jenjang, data.tahapKe, data.tahapFase, data.sisaDetik, data.jawabanTersimpan, soalData.sections);
@@ -258,7 +258,7 @@ export default function TesPage() {
           setTahap('selesai');
         } else {
           setSesi({ nama: rd.nama, kelas: rd.kelas, sekolah: rd.sekolah });
-          const soalRes = await fetch(`${API}/soal?jenjang=${rd.jenjang}`);
+          const soalRes = await fetch(`${API}/soal?jenjang=${rd.jenjang}&sesiId=${sesiIdRef.current}`);
           const soalData = await soalRes.json();
           setSections(soalData.sections);
           terapkanStatus(rd.jenjang, rd.tahapKe, rd.tahapFase, rd.sisaDetik, rd.jawabanTersimpan, soalData.sections);
@@ -296,7 +296,7 @@ export default function TesPage() {
       }
 
       setSesi(data);
-      const soalRes = await fetch(`${API}/soal?jenjang=${form.jenjang}`);
+      const soalRes = await fetch(`${API}/soal?jenjang=${form.jenjang}&sesiId=${data.sesiId}`);
       const soalData = await soalRes.json();
       setSections(soalData.sections);
 
@@ -645,7 +645,15 @@ export default function TesPage() {
     );
   }
 
-  if (!section) {
+  // PENTING: cek 'terkunci' dulu SEBELUM cek '!section'. Saat sesi dikunci
+  // (login/resume/heartbeat menemukan status terkunci_pelanggaran), soal
+  // SENGAJA tidak ikut di-fetch (lihat efek login & resume di atas), jadi
+  // `sections` masih kosong -> `section` selalu undefined. Kalau urutannya
+  // kebalik seperti sebelumnya, layar "Tes Dikunci Sistem" (yang punya form
+  // buka-kunci-mandiri) tidak PERNAH tampil -- peserta cuma lihat "Memuat
+  // soal..." selamanya dan terpaksa selalu minta panitia buka lewat /admin,
+  // padahal opsi buka-kunci-mandiri sudah ada di layar terkunci itu.
+  if (!section && tahap !== 'terkunci') {
     return (
       <main className="page-wrap"><div className="shell"><div className="card" style={{ textAlign: 'center' }}>Memuat soal...</div></div></main>
     );

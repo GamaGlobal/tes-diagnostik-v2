@@ -11,7 +11,7 @@ import { computeHasil } from '../../../../lib/scoring';
 export async function POST(req) {
   const { sesiId, dipaksaOleh } = await req.json();
 
-  const [sesi] = await sql`select jenjang from sesi_tes where id = ${sesiId}`;
+  const [sesi] = await sql`select jenjang, versi_memori from sesi_tes where id = ${sesiId}`;
   if (!sesi) return Response.json({ error: 'Sesi tidak ditemukan' }, { status: 404 });
 
   const rows = await sql`
@@ -24,12 +24,24 @@ export async function POST(req) {
   // penyebut skor di computeHasil, lihat komentar di lib/scoring.js) — bukan
   // cuma yang sempat dijawab. Untuk BAKAT dipecah per sub_kategori karena tiap
   // sub-tes (MIPA/IPS/BHS/dst.) punya jumlah soal & bobot sendiri-sendiri.
-  const totalRows = await sql`
+  // Kategori ME (Ingatan) punya 4 varian pasangan berbeda di bank_soal
+  // (db/010_versi_memori.sql) tapi satu sesi cuma pernah ditugaskan SATU
+  // varian (lihat app/api/attempt/soal) -- jadi dihitung terpisah di sini
+  // memakai versi_memori sesi ini, supaya penyebut skornya tetap 20/24
+  // (jumlah soal varian itu saja), bukan total ke-4 varian digabung.
+  const totalRowsLain = await sql`
     select kategori, sub_kategori, count(*)::int as total
     from bank_soal
-    where jenjang = ${sesi.jenjang} or jenjang = 'semua'
+    where (jenjang = ${sesi.jenjang} or jenjang = 'semua') and kategori <> 'ME'
     group by kategori, sub_kategori
   `;
+  const [meTotal] = await sql`
+    select count(*)::int as total
+    from bank_soal
+    where jenjang = ${sesi.jenjang} and kategori = 'ME'
+      and sub_kategori is not distinct from ${sesi.versi_memori}
+  `;
+  const totalRows = [...totalRowsLain, { kategori: 'ME', sub_kategori: null, total: meTotal.total }];
   const totalPerKategori = {};
   for (const r of totalRows) {
     if (r.kategori === 'BAKAT') {

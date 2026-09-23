@@ -8,7 +8,7 @@
 // - Password dicek pakai bcrypt, sama seperti pola auth SimTKA.
 import { sql } from '../../../../lib/db';
 import bcrypt from 'bcryptjs';
-import { STATUS_TERKUNCI } from '../../../../lib/anti-curang';
+import { STATUS_TERKUNCI, JUMLAH_VERSI_MEMORI } from '../../../../lib/anti-curang';
 
 export async function POST(req) {
   const { username, password, jenjang, totalTahap } = await req.json();
@@ -26,9 +26,19 @@ export async function POST(req) {
 
   let sesi = existing;
   if (!sesi) {
+    // Rotasi varian tugas Ingatan (v1..v4, lihat db/010_versi_memori.sql &
+    // JUMLAH_VERSI_MEMORI): dihitung dari jumlah sesi jenjang yang sama yang
+    // SUDAH ada sebelum sesi ini dibuat, supaya siswa yang login berurutan
+    // (biasanya = berdekatan tempat duduk / satu per satu dipanggil panitia)
+    // dapat varian yang bergantian, bukan varian yang sama terus-menerus.
+    const [{ jumlah }] = await sql`
+      select count(*)::int as jumlah from sesi_tes where jenjang = ${jenjang}
+    `;
+    const versiMemori = `v${(jumlah % JUMLAH_VERSI_MEMORI) + 1}`;
+
     [sesi] = await sql`
-      insert into sesi_tes (username, jenjang, total_tahap, item_bank_version)
-      values (${username}, ${jenjang}, ${totalTahap}, '2026-08-audit-v2')
+      insert into sesi_tes (username, jenjang, total_tahap, item_bank_version, versi_memori)
+      values (${username}, ${jenjang}, ${totalTahap}, '2026-09-versi-memori', ${versiMemori})
       returning *
     `;
   }
